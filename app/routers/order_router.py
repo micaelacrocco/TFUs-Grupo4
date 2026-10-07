@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import httpx
 
+from app.resilience.retry import call_with_retry
+
 router = APIRouter(prefix="/api/v1", tags=["Order Service"])
 
 # URLs internas obtenidas de las variables de entorno configuradas en Docker Compose
@@ -22,8 +24,11 @@ def create_order(order: OrderRequest):
     """I-ORD-01: Procesamiento de orden consumiendo Catálogo y Wallet."""
     
     # 1. CONSUMO DE INTERFAZ EXTERNA: Verificar si el activo existe y está activo en el Servicio de Catálogo
+    # Retry (UT4): GET es idempotente, así que ante una falla transitoria
+    # (conexión, timeout, 502/503/504) reintenta con backoff antes de
+    # rendirse.
     try:
-        response = httpx.get(f"{CATALOG_URL}/api/v1/assets", timeout=5.0)
+        response = call_with_retry("GET", f"{CATALOG_URL}/api/v1/assets", timeout=5.0)
         if response.status_code != 200:
             raise HTTPException(status_code=502, detail="Catalog Service unreachable")
         
@@ -39,13 +44,24 @@ def create_order(order: OrderRequest):
         raise HTTPException(status_code=503, detail="Failed to connect to Catalog Service")
 
     # 2. CONSUMO DE INTERFAZ INTERNA: Debitar saldo en el Servicio de Wallet (Transacción ACID)
+    # Retry (UT4): el débito NO es idempotente, así que solo reintenta si la
+    # conexión nunca se estableció (`retry_on_connect_only=True`). Ante un
+    # timeout de lectura no reintenta: el servidor pudo haber aplicado el
+    # débito antes de que se perdiera la respuesta, y reintentarlo a ciegas
+    # arriesgaría debitar dos veces (ver ASR-05, UT1).
     try:
         tx_payload = {
             "user_id": order.user_id,
             "amount": -order.total_price  # Restar del saldo
         }
-        tx_response = httpx.post(f"{WALLET_URL}/api/v1/wallets/transact", json=tx_payload, timeout=5.0)
-        
+        tx_response = call_with_retry(
+            "POST",
+            f"{WALLET_URL}/api/v1/wallets/transact",
+            json=tx_payload,
+            timeout=5.0,
+            retry_on_connect_only=True,
+        )
+
         if tx_response.status_code != 200:
             error_detail = tx_response.json().get("detail", "Wallet transaction failed")
             raise HTTPException(status_code=400, detail=error_detail)

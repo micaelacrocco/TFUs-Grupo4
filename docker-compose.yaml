@@ -30,13 +30,22 @@ services:
       - WALLET_SERVICE_URL=http://wallet_service:8000
       - ORDER_SERVICE_URL=http://order_service:8000
     depends_on:
-      - catalog_service
-      - wallet_service
-      - order_service
+      catalog_service:
+        condition: service_healthy
+      wallet_service:
+        condition: service_healthy
+      order_service:
+        condition: service_healthy
     networks:
       - investnow-net
     volumes:
       - ./app/config:/app/app/config
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   wallet_service:
     build:
@@ -53,6 +62,15 @@ services:
       - investnow-net
     volumes:
       - ./app/config:/app/config
+    healthcheck:
+      # Health Endpoint Monitoring (UT4): este chequeo es "profundo" -- el
+      # propio GET /health de wallet_service valida la conexión a Postgres
+      # (ver app/wallet_main.py), no solo que el proceso esté vivo.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   catalog_service:
     build:
@@ -64,6 +82,12 @@ services:
       - investnow-net
     volumes:
       - ./app/config:/app/config
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   order_service:
     build:
@@ -75,12 +99,23 @@ services:
       - CATALOG_SERVICE_URL=${CATALOG_SERVICE_URL}
       - WALLET_SERVICE_URL=${WALLET_SERVICE_URL}
     depends_on:
-      - catalog_service
-      - wallet_service
+      catalog_service:
+        condition: service_healthy
+      wallet_service:
+        condition: service_healthy
     networks:
       - investnow-net
     volumes:
       - ./app/config:/app/config
+    healthcheck:
+      # Chequeo "profundo" (GET /health/dependencies, UT4): valida que
+      # order_service pueda alcanzar tanto a Catalog como a Wallet, sus
+      # únicas dos dependencias (ver diagrama de componentes de UT3).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/dependencies', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   pgdata:

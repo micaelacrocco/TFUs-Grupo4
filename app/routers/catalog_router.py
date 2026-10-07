@@ -15,6 +15,11 @@ assets_db = {
     3: {"id": 3, "name": "Tesla Inc.", "symbol": "TSLA", "status": "inactive"}
 }
 
+# Contador en memoria usado solo por el endpoint de fault injection de abajo
+# (demo del patrón Retry, UT4): cuántas próximas llamadas a GET /assets
+# deben simular una falla transitoria antes de volver a responder normal.
+_fail_next_n = 0
+
 @router.get("/assets")
 def get_assets():
     """I-CAT-01: Consulta pública del catálogo de activos.
@@ -23,8 +28,23 @@ def get_assets():
     al escalar horizontalmente este servicio, que distintas réplicas
     responden indistintamente a la misma solicitud.
     """
+    global _fail_next_n
+    if _fail_next_n > 0:
+        _fail_next_n -= 1
+        raise HTTPException(status_code=503, detail="Simulated transient failure (debug)")
+
     served_by = socket.gethostname()
     return [{**asset, "served_by": served_by} for asset in assets_db.values()]
+
+@router.post("/_debug/fail-next/{n}")
+def set_fail_next(n: int):
+    """Solo para demostrar el patrón Retry (UT4, scripts/demo_ut4_retry.sh):
+    fuerza que las próximas `n` llamadas a `GET /assets` devuelvan 503,
+    simulando una falla transitoria real de forma determinística, sin
+    depender de los tiempos de reinicio de un contenedor real."""
+    global _fail_next_n
+    _fail_next_n = n
+    return {"fail_next": _fail_next_n}
 
 @router.patch("/assets/{asset_id}/status")
 def update_asset_status(asset_id: int, status: str):

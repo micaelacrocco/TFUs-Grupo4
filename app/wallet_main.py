@@ -11,6 +11,7 @@ from app.aspects.logging_aspect import add_logging_aspect
 from app.config.loader import build_config, load_raw_config
 from app.config.validator import validate
 from app.routers import wallet_router  # Router específico de cuentas y saldos
+from app.routers.health_router import build_health_router
 
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "config.yaml"
 
@@ -32,6 +33,25 @@ add_logging_aspect(app, enabled=config.features.request_logging_enabled)
 
 # Registrar rutas financieras de la wallet
 app.include_router(wallet_router.router)
+
+
+def check_database() -> tuple[bool, str]:
+    """Health Endpoint Monitoring (UT4): la única dependencia de Wallet es
+    Postgres, así que su liveness no tiene sentido sin validarla -- no está
+    "sano" un proceso que no puede cumplir su única responsabilidad."""
+    try:
+        conn = wallet_router.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        finally:
+            conn.close()
+        return True, "database reachable"
+    except Exception as exc:  # cualquier falla de conexión/consulta cuenta como "down"
+        return False, f"database unreachable: {exc}"
+
+
+app.include_router(build_health_router("wallet", liveness_check=check_database))
 
 if __name__ == "__main__":
     import uvicorn
