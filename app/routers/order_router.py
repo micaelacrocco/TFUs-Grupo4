@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 import httpx
 
@@ -14,14 +14,20 @@ WALLET_URL = os.getenv("WALLET_SERVICE_URL", "http://wallet_service:8000")
 orders_db = []
 
 class OrderRequest(BaseModel):
-    user_id: int
+    #user_id: int --> Eliminamos la posibilidad de recibir el user_id del cliente y lo pasamos por cabecera
     asset_id: int
     quantity: int
     total_price: float
 
 @router.post("/orders")
-def create_order(order: OrderRequest):
+def create_order(
+    order: OrderRequest,
+    x_user_id: str = Header(...)):
     """I-ORD-01: Procesamiento de orden consumiendo Catálogo y Wallet."""
+    try:
+        user_id = int(x_user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user identification format")
     
     # 1. CONSUMO DE INTERFAZ EXTERNA: Verificar si el activo existe y está activo en el Servicio de Catálogo
     # Retry (UT4): GET es idempotente, así que ante una falla transitoria
@@ -51,7 +57,7 @@ def create_order(order: OrderRequest):
     # arriesgaría debitar dos veces (ver ASR-05, UT1).
     try:
         tx_payload = {
-            "user_id": order.user_id,
+            "user_id": user_id, #usar id de la cabecera
             "amount": -order.total_price  # Restar del saldo
         }
         tx_response = call_with_retry(
@@ -72,7 +78,7 @@ def create_order(order: OrderRequest):
     # 3. Registrar la orden de forma exitosa
     new_order = {
         "order_id": len(orders_db) + 1,
-        "user_id": order.user_id,
+        "user_id": user_id, #reemplazar el id de la orden por el id de la cabecera
         "asset_id": order.asset_id,
         "quantity": order.quantity,
         "total_price": order.total_price,
@@ -86,7 +92,13 @@ def create_order(order: OrderRequest):
     }
 
 @router.get("/orders/{user_id}")
-def get_user_orders(user_id: int):
+def get_user_orders(
+    user_id: int,
+    x_user_id: str = Header(...)
+):
     """I-ORD-01: Consulta de historial de órdenes por usuario."""
+    # Asegurar que el usuario solo consulte sus propias órdenes
+    if int(x_user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Unauthorized to access other user's orders")
     user_orders = [o for o in orders_db if o["user_id"] == user_id]
     return user_orders

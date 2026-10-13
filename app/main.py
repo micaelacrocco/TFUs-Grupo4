@@ -9,6 +9,8 @@ from app.aspects.logging_aspect import add_logging_aspect
 from app.config.loader import build_config, load_raw_config
 from app.config.validator import validate
 from app.routers import business, meta
+from app.routers.auth_router import router as auth_router
+from app.routers.gateway_router import router as gateway_router
 from app.routers.health_router import build_health_router
 
 CONFIG_PATH = Path(__file__).parent / "config" / "config.yaml"
@@ -23,13 +25,17 @@ if errors:
 
 config = build_config(raw_config)
 
-app = FastAPI(title="TFU UT2 - Tácticas RNF")
+app = FastAPI(title="TFU UT4 - InvestNow Gateway")
 app.state.config = config
 
 add_logging_aspect(app, enabled=config.features.request_logging_enabled)
 
 app.include_router(business.router)
 app.include_router(meta.router)
+
+# Nuevos routers de UT4: Autenticación simulada y Enrutamiento con Gatekeeper
+app.include_router(auth_router)
+app.include_router(gateway_router)
 
 # Health Endpoint Monitoring (UT4): sin dependencias propias, chequeo shallow.
 app.include_router(build_health_router("api"))

@@ -18,6 +18,7 @@ services:
       retries: 5
     networks:
       - investnow-net
+  # Api Gateway, único puerto de entrada 8000
   api:
     build:
       context: .
@@ -26,6 +27,7 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - CATALOG_SERVICE_URL=http://catalog_service:8000
       - WALLET_SERVICE_URL=http://wallet_service:8000
       - ORDER_SERVICE_URL=http://order_service:8000
@@ -51,8 +53,8 @@ services:
     build:
       context: .
       dockerfile: docker/wallet/Dockerfile
-    ports:
-      - "8001:8000"
+    #ports:
+    #  - "8001:8000" --> Ya no es accesible desde afuera
     environment:
       - DATABASE_URL=${DATABASE_URL}
     depends_on:
@@ -76,8 +78,8 @@ services:
     build:
       context: .
       dockerfile: docker/catalog/Dockerfile
-    ports:
-      - "8002:8000"
+    #ports:
+    #  - "8002:8000" --> Ya no es accesible desde afuera
     networks:
       - investnow-net
     volumes:
@@ -93,8 +95,8 @@ services:
     build:
       context: .
       dockerfile: docker/order/Dockerfile
-    ports:
-      - "8003:8000"
+    #ports:
+    #  - "8003:8000" --> Ya no es accesible desde afuera
     environment:
       - CATALOG_SERVICE_URL=${CATALOG_SERVICE_URL}
       - WALLET_SERVICE_URL=${WALLET_SERVICE_URL}
