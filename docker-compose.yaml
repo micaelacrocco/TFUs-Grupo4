@@ -18,6 +18,31 @@ services:
       retries: 5
     networks:
       - investnow-net
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - investnow-net
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-investnow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-investnow}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - investnow-net
+
   api:
     build:
       context: .
@@ -78,6 +103,8 @@ services:
       dockerfile: docker/catalog/Dockerfile
     ports:
       - "8002:8000"
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     networks:
       - investnow-net
     volumes:
@@ -98,10 +125,16 @@ services:
     environment:
       - CATALOG_SERVICE_URL=${CATALOG_SERVICE_URL}
       - WALLET_SERVICE_URL=${WALLET_SERVICE_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://investnow:investnow@rabbitmq:5672/}
     depends_on:
       catalog_service:
         condition: service_healthy
       wallet_service:
+        condition: service_healthy
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - investnow-net
@@ -117,8 +150,31 @@ services:
       retries: 5
       start_period: 5s
 
+  order_worker:
+    build:
+      context: .
+      dockerfile: docker/order-worker/Dockerfile
+    environment:
+      - CATALOG_SERVICE_URL=${CATALOG_SERVICE_URL}
+      - WALLET_SERVICE_URL=${WALLET_SERVICE_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://investnow:investnow@rabbitmq:5672/}
+    depends_on:
+      catalog_service:
+        condition: service_healthy
+      wallet_service:
+        condition: service_healthy
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - investnow-net
+
 volumes:
   pgdata:
+  rabbitmqdata:
 
 networks:
   investnow-net:
