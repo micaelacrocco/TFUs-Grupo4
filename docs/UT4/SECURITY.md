@@ -66,7 +66,11 @@ Gateway ..> WalletService : "Ruteo interno protegido"
 
 @enduml
 ```
-### 3.3 Conclusión de Seguridad
+
+### 3.3 Health Checks y Monitoreo
+Se implementaron los controles de salud en el enrutamiento del Gateway para sortear el Gatekeeper y así facilitar el monitoreo de estado de los servicios internos, manteniendo su aislamiento.
+
+### 3.4 Conclusión de Seguridad
 
 El API Gateway actúa como una única fachada de entrada. Los microservicios internos no necesitan exponerse directamente a internet ni implementar lógica compleja de manejo de sesiones. Una vez procesada la entrada, el gateway inyecta cabeceras de contexto seguro firmadas (como `X-User-Id`), confiando únicamente en la red interna aislada (`investnow-net`).
 
