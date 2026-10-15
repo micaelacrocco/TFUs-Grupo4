@@ -11,43 +11,38 @@
 #   docker compose up --build -d
 set -e
 
+GATEWAY_URL="http://localhost:8000"
+
 fail_hint="(sin respuesta -- ¿está el stack levantado y reconstruido? 'docker compose up --build -d')"
 
 echo "--- Verificando que el stack esté levantado ---"
-if ! curl -s -o /dev/null -f "http://localhost:8000/health"; then
-  echo "api no responde en http://localhost:8000/health."
+if ! curl -s -o /dev/null -f "$GATEWAY_URL/health"; then
+  echo "api no responde en $GATEWAY_URL/health."
   echo "Levantá (y reconstruí, si es la primera vez con los cambios de UT4) el stack:"
   echo "  docker compose up --build -d"
   exit 1
 fi
-echo "OK, el stack responde."
+echo "OK, el Gateway recibe peticiones."
 echo
 
-echo "--- Estado de salud de los 4 servicios ---"
-for entry in "api:8000" "catalog:8002" "wallet:8001" "order:8003"; do
-  name="${entry%%:*}"
-  port="${entry##*:}"
-  echo "[$name] GET /health"
-  curl -s "http://localhost:${port}/health" || echo "$fail_hint"
+echo "--- Estado de salud de los 3 microservicios ---"
+for service in "catalog" "wallets" "orders"; do
+  echo "[$service] GET /health"
+  curl -s "$GATEWAY_URL/api/v1/$service/health" || echo "$fail_hint"
   echo
 done
 
 echo
-echo "--- Estado agregado de las dependencias de order_service (Catálogo + Wallet) ---"
-curl -s http://localhost:8003/health/dependencies || echo "$fail_hint"
-echo
-
-echo
-echo "--- Matando wallet_service para simular una caída ---"
+echo "--- Simular una caída de wallet service ---"
 docker compose kill wallet_service
 sleep 1
 
 echo "GET /health directo a wallet_service (debería fallar: conexión rechazada):"
-curl -s http://localhost:8001/health || echo "(falló como se esperaba, el contenedor está caído)"
+curl -s "$GATEWAY_URL/api/v1/wallets/health" || echo "(falló como se esperaba, el contenedor está caído)"
 
 echo
 echo "GET /health/dependencies en order_service (debería reportar wallet caído, HTTP 503):"
-curl -s -w "\nHTTP %{http_code}\n" http://localhost:8003/health/dependencies || echo "$fail_hint"
+curl -s -w "\nHTTP %{http_code}\n" "$GATEWAY_URL/api/v1/orders/health/dependencies" || echo "$fail_hint"
 
 echo
 echo "--- docker compose ps (columna STATUS de wallet_service: exited/unhealthy) ---"
@@ -68,5 +63,5 @@ echo "wallet_service: $status"
 
 echo
 echo "GET /health/dependencies en order_service (debería volver a estar OK):"
-curl -s http://localhost:8003/health/dependencies || echo "$fail_hint"
+curl -s "$GATEWAY_URL/api/v1/orders/health/dependencies" || echo "$fail_hint"
 echo

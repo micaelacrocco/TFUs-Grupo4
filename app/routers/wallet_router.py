@@ -2,7 +2,7 @@ import os
 from decimal import Decimal, ROUND_HALF_UP
 
 import psycopg2
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1", tags=["Wallet Service"])
@@ -41,28 +41,40 @@ class TransactionRequest(BaseModel):
     transaction_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
-@router.get("/wallets/{user_id}")
-def get_wallet(user_id: int):
+@router.get("/wallets")
+def get_wallet(x_user_id: str = Header(...)):
     """I-WAL-01: Consulta de saldo del usuario, leído directamente de Postgres."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT balance FROM wallets WHERE user_id = %s", (user_id,))
+            cur.execute("SELECT balance FROM wallets WHERE user_id = %s", (x_user_id,))
             row = cur.fetchone()
     finally:
         conn.close()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Wallet not found")
-    return {"user_id": user_id, "balance": float(row[0])}
+    return {"user_id": x_user_id, "balance": float(row[0])}
 
 
 @router.post("/wallets/transact")
-def process_transaction(tx: TransactionRequest):
+def process_transaction(tx: TransactionRequest, x_user_id: str = Header(...)):
     """I-WAL-02: Transacción ACID real: lock de fila (SELECT ... FOR UPDATE),
     validación y update dentro de una única transacción de Postgres. Ante un
     error la transacción se revierte por completo (rollback), sin dejar el
     saldo a mitad de camino."""
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="Contexto de usuario ausente")
+
+    authenticated_user_id = int(x_user_id)
+
+    # Si el usuario intenta operar sobre otra billetera que no es la suya
+    if tx.user_id != authenticated_user_id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Acceso denegado: No puedes realizar transacciones en la billetera de otro usuario"
+        )
+    
     conn = get_connection()
     transaction_amount = Decimal(str(tx.amount)).quantize(
         Decimal("0.01"),
@@ -110,7 +122,7 @@ def process_transaction(tx: TransactionRequest):
 
                 cur.execute(
                     "SELECT balance FROM wallets WHERE user_id = %s FOR UPDATE",
-                    (tx.user_id,),
+                    (authenticated_user_id,),
                 )
                 row = cur.fetchone()
                 if row is None:

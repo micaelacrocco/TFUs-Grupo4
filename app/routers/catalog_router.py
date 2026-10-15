@@ -33,7 +33,7 @@ assets_db = {
 # deben simular una falla transitoria antes de volver a responder normal.
 _fail_next_n = 0
 
-@router.get("/assets")
+@router.get("/catalog")
 def get_assets(response: Response):
     """I-CAT-01: Consulta pública del catálogo de activos.
 
@@ -81,7 +81,7 @@ def set_fail_next(n: int):
     _fail_next_n = n
     return {"fail_next": _fail_next_n}
 
-@router.patch("/assets/{asset_id}/status")
+@router.patch("/catalog/{asset_id}/status")
 def update_asset_status(asset_id: int, status: str):
     """I-CAT-02: Interfaz de administración para habilitar/deshabilitar activos."""
     if asset_id not in assets_db:

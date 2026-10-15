@@ -1,7 +1,7 @@
 import logging
-
 import pika
-from fastapi import APIRouter, HTTPException, status
+
+from fastapi import APIRouter, HTTPException, Header, status
 
 from app.order_messaging import publish_order
 from app.order_models import OrderRequest
@@ -34,5 +34,5 @@ def create_order(order: OrderRequest):
 
 @router.get("/orders/{user_id}")
 def get_user_orders(user_id: int):
-    """Consulta el historial persistido, incluyendo el estado actual."""
+    """I-ORD-01: Consulta de historial de órdenes por usuario, persistido, incluyendo el estado actual."""
     return get_orders_for_user(user_id)
