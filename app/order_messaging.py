@@ -4,8 +4,6 @@ from typing import Any
 
 import pika
 
-from app.order_models import OrderRequest
-
 ORDERS_QUEUE = "orders_queue"
 RABBITMQ_URL = os.getenv(
     "RABBITMQ_URL",
@@ -23,17 +21,16 @@ def open_orders_channel() -> tuple[Any, Any]:
         connection.close()
         raise
 
-
-def publish_order(order_id: int, order: OrderRequest) -> None:
+# Se desacopla la firma, si mañana cambia el contrato, no hay que modificar parámetros
+def publish_order(message: dict[str, Any]) -> None:
+    """Publica el diccionario de la orden directamente en RabbitMQ."""
     connection, channel = open_orders_channel()
     try:
         channel.confirm_delivery()
         channel.basic_publish(
             exchange="",
             routing_key=ORDERS_QUEUE,
-            body=json.dumps(
-                {"order_id": order_id, "order": order.model_dump()}
-            ),
+            body=json.dumps(message),
             properties=pika.BasicProperties(
                 content_type="application/json",
                 delivery_mode=pika.DeliveryMode.Persistent,

@@ -10,14 +10,16 @@ class OrderProcessingError(Exception):
 
 def process_order(
     order_id: int,
+    user_id: int,
     order: OrderRequest,
     catalog_url: str,
     wallet_url: str,
 ) -> None:
     try:
+        ## Desacoplar llamado a catalogo --> Crear Catalog Client
         catalog_response = call_with_retry(
             "GET",
-            f"{catalog_url}/api/v1/assets",
+            f"{catalog_url}/api/v1/catalog",
             timeout=5.0,
         )
     except httpx.RequestError as exc:
@@ -34,11 +36,13 @@ def process_order(
         raise OrderProcessingError("Asset is inactive. Trading blocked.")
 
     try:
+        ## Hay que sacar esto de acá, order processing tiene que ser agnóstico a la petición -> Crear Wallet Client
         wallet_response = call_with_retry(
             "POST",
             f"{wallet_url}/api/v1/wallets/transact",
+            headers={"X-User-Id": str(user_id)},
             json={
-                "user_id": order.user_id,
+                "user_id": user_id,
                 "amount": -order.total_price,
                 "transaction_id": f"order:{order_id}",
             },

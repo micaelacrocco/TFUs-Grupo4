@@ -21,6 +21,7 @@ def handle_order(channel: Any, method: Any, _: Any, body: bytes) -> None:
     try:
         message = json.loads(body)
         order_id = int(message["order_id"])
+        user_id = int(message["user_id"])
         order = OrderRequest.model_validate(message["order"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
         logger.exception("Discarding malformed message from %s", ORDERS_QUEUE)
@@ -28,7 +29,7 @@ def handle_order(channel: Any, method: Any, _: Any, body: bytes) -> None:
         return
 
     try:
-        process_order(order_id, order, CATALOG_URL, WALLET_URL)
+        process_order(order_id, user_id, order, CATALOG_URL, WALLET_URL)
     except OrderProcessingError as exc:
         logger.warning("Order %s failed: %s", order_id, exc)
         try:
