@@ -50,5 +50,5 @@ HTTP_CODE_OK=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GATEWAY_URL/api/
   -H "Authorization: Bearer $TOKEN" \
   -d '{"asset_id": 1, "quantity": 1, "total_price": 150.0}')
 
-echo "Código HTTP recibido: $HTTP_CODE_OK (Esperado: 200 o 201)"
+echo "Código HTTP recibido: $HTTP_CODE_OK (Esperado: 202 de RabbitMQ)"
 echo "Gatekeeper validó la identidad y el Gateway enrutó con éxito al microservicio interno"

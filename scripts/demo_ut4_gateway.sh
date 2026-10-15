@@ -24,7 +24,7 @@ echo "=========================================================="
 echo "--- 2. Revisando el catálogo de activos disponibles ---"
 echo "=========================================================="
 # El Gatekeeper valida el token y el Gateway rutea a catalog_service
-curl -s -X GET "$GATEWAY_URL/api/v1/assets" \
+curl -s -X GET "$GATEWAY_URL/api/v1/catalog" \
   -H "Authorization: Bearer $TOKEN"
 echo
 echo "✅ Catálogo consultado a través del proxy perimetral."
@@ -56,6 +56,16 @@ echo "=========================================================="
 echo "--- 5. Consultando el historial de órdenes del usuario ---"
 echo "=========================================================="
 curl -s -X GET "$GATEWAY_URL/api/v1/orders" \
-  -H "Authorization: Bearer $TOKEN"
+  -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, list):
+        print(json.dumps(data[-10:], indent=2))
+    else:
+        print(json.dumps(data, indent=2))
+except Exception as e:
+    print('Error parseando JSON:', e)
+"
 echo
-echo "✅ Historial de órdenes consultado correctamente."
+echo "✅ 10 Ordenes más nuevas. Historial de órdenes consultado correctamente."

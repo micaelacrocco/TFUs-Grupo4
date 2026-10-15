@@ -1,104 +1,66 @@
-import os
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
-import httpx
+import logging
+import pika
 
-from app.resilience.retry import call_with_retry
+from fastapi import APIRouter, HTTPException, Header, status
+
+from app.order_messaging import publish_order
+from app.order_models import OrderRequest
+from app.order_store import (
+    create_order as create_order_record,
+    get_orders_for_user,
+    update_order_status,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["Order Service"])
+logger = logging.getLogger(__name__)
 
-# URLs internas obtenidas de las variables de entorno configuradas en Docker Compose
-CATALOG_URL = os.getenv("CATALOG_SERVICE_URL", "http://catalog_service:8000")
-WALLET_URL = os.getenv("WALLET_SERVICE_URL", "http://wallet_service:8000")
 
-orders_db = []
-
-class OrderRequest(BaseModel):
-    #user_id: int --> Eliminamos la posibilidad de recibir el user_id del cliente y lo pasamos por cabecera
-    asset_id: int
-    quantity: int
-    total_price: float
-
-@router.post("/orders")
+@router.post("/orders", status_code=status.HTTP_202_ACCEPTED)
 def create_order(
     order: OrderRequest,
-    x_user_id: str = Header(...)):
-    """I-ORD-01: Procesamiento de orden consumiendo Catálogo y Wallet."""
-    try:
-        user_id = int(x_user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user identification format")
-    
-    # 1. CONSUMO DE INTERFAZ EXTERNA: Verificar si el activo existe y está activo en el Servicio de Catálogo
-    # Retry (UT4): GET es idempotente, así que ante una falla transitoria
-    # (conexión, timeout, 502/503/504) reintenta con backoff antes de
-    # rendirse.
-    try:
-        response = call_with_retry("GET", f"{CATALOG_URL}/api/v1/assets", timeout=5.0)
-        if response.status_code != 200:
-            raise HTTPException(status_code=502, detail="Catalog Service unreachable")
-        
-        assets = response.json()
-        asset = next((a for a in assets if a["id"] == order.asset_id), None)
-        
-        if not asset:
-            raise HTTPException(status_code=404, detail="Asset not found in catalog")
-        if asset["status"] != "active":
-            raise HTTPException(status_code=400, detail="Asset is inactive. Trading blocked.")
-            
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Failed to connect to Catalog Service")
-
-    # 2. CONSUMO DE INTERFAZ INTERNA: Debitar saldo en el Servicio de Wallet (Transacción ACID)
-    # Retry (UT4): el débito NO es idempotente, así que solo reintenta si la
-    # conexión nunca se estableció (`retry_on_connect_only=True`). Ante un
-    # timeout de lectura no reintenta: el servidor pudo haber aplicado el
-    # débito antes de que se perdiera la respuesta, y reintentarlo a ciegas
-    # arriesgaría debitar dos veces (ver ASR-05, UT1).
-    try:
-        tx_payload = {
-            "user_id": user_id, #usar id de la cabecera
-            "amount": -order.total_price  # Restar del saldo
-        }
-        tx_response = call_with_retry(
-            "POST",
-            f"{WALLET_URL}/api/v1/wallets/transact",
-            json=tx_payload,
-            timeout=5.0,
-            retry_on_connect_only=True,
-        )
-
-        if tx_response.status_code != 200:
-            error_detail = tx_response.json().get("detail", "Wallet transaction failed")
-            raise HTTPException(status_code=400, detail=error_detail)
-            
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Failed to connect to Wallet Service")
-
-    # 3. Registrar la orden de forma exitosa
-    new_order = {
-        "order_id": len(orders_db) + 1,
-        "user_id": user_id, #reemplazar el id de la orden por el id de la cabecera
-        "asset_id": order.asset_id,
-        "quantity": order.quantity,
-        "total_price": order.total_price,
-        "status": "executed"
-    }
-    orders_db.append(new_order)
-    
-    return {
-        "message": "Order processed and executed successfully",
-        "order": new_order
-    }
-
-@router.get("/orders/{user_id}")
-def get_user_orders(
-    user_id: int,
     x_user_id: str = Header(...)
 ):
-    """I-ORD-01: Consulta de historial de órdenes por usuario."""
-    # Asegurar que el usuario solo consulte sus propias órdenes
-    if int(x_user_id) != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized to access other user's orders")
-    user_orders = [o for o in orders_db if o["user_id"] == user_id]
-    return user_orders
+    """Valida la orden, la persiste como pendiente y la publica en RabbitMQ."""
+    order_data = order.model_dump()
+    order_data["user_id"] = x_user_id
+
+    order_id = create_order_record(order_data)
+    try:
+        message = {
+            "order_id": order_id,
+            "user_id": x_user_id,
+            "order": order.model_dump(),
+        }
+        publish_order(message)
+    except (pika.exceptions.AMQPError, OSError, RuntimeError) as exc:
+        logger.exception("Could not publish order %s to RabbitMQ", order_id)
+        update_order_status(order_id, "FAILED", "Could not enqueue order")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Order could not be queued",
+        ) from exc
+
+    return {"order_id": order_id, "status": "PENDING"}
+
+@router.get("/orders")
+def get_user_orders(
+    x_user_id: str = Header(...)
+):
+    """I-ORD-01: Consulta de historial de órdenes por usuario, persistido, incluyendo el estado actual."""
+    current_user_id = int(x_user_id)
+
+    return get_orders_for_user(current_user_id)
+
+@router.get("/orders/admin/{target_user_id}")
+def get_any_user_orders(
+    target_user_id: int,
+    x_user_roles: str = Header("")
+):
+    """Consulta exclusiva para administradores que requieren ver órdenes ajenas."""
+    roles = [r.strip() for r in x_user_roles.split(",")]
+    if "admin" not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para consultar órdenes de otros usuarios."
+        )
+    return get_orders_for_user(target_user_id)

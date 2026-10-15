@@ -1,8 +1,9 @@
 import os
+from decimal import Decimal, ROUND_HALF_UP
 
 import psycopg2
 from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1", tags=["Wallet Service"])
 
@@ -13,9 +14,31 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
 
+def initialize_wallet_schema() -> None:
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS wallet_transactions (
+                        transaction_id VARCHAR(128) PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES wallets(user_id),
+                        amount NUMERIC(14, 2) NOT NULL,
+                        previous_balance NUMERIC(14, 2) NOT NULL,
+                        new_balance NUMERIC(14, 2) NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+    finally:
+        conn.close()
+
+
 class TransactionRequest(BaseModel):
     user_id: int
-    amount: float  # Positivo para depósito, negativo para débito/compra
+    amount: float = Field(allow_inf_nan=False)  # Positivo para depósito, negativo para débito/compra
+    transaction_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 @router.get("/wallets")
@@ -53,6 +76,10 @@ def process_transaction(tx: TransactionRequest, x_user_id: str = Header(...)):
         )
     
     conn = get_connection()
+    transaction_amount = Decimal(str(tx.amount)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
     try:
         # `with conn:` (no `with conn.cursor():`) es lo que delimita la
         # transacción: psycopg2 abre una transacción implícita en la primera
@@ -65,6 +92,34 @@ def process_transaction(tx: TransactionRequest, x_user_id: str = Header(...)):
         # vez de leer un balance desactualizado.
         with conn:
             with conn.cursor() as cur:
+                if tx.transaction_id is not None:
+                    cur.execute(
+                        """
+                        SELECT user_id, amount, previous_balance, new_balance
+                        FROM wallet_transactions
+                        WHERE transaction_id = %s
+                        """,
+                        (tx.transaction_id,),
+                    )
+                    existing = cur.fetchone()
+                    if existing is not None:
+                        if (
+                            existing[0] != tx.user_id
+                            or Decimal(existing[1]) != transaction_amount
+                        ):
+                            raise HTTPException(
+                                status_code=409,
+                                detail="Transaction ID was already used with different data",
+                            )
+                        current_balance = float(existing[2])
+                        new_balance = float(existing[3])
+                        return {
+                            "status": "success",
+                            "user_id": tx.user_id,
+                            "previous_balance": float(current_balance),
+                            "new_balance": float(new_balance),
+                        }
+
                 cur.execute(
                     "SELECT balance FROM wallets WHERE user_id = %s FOR UPDATE",
                     (authenticated_user_id,),
@@ -73,8 +128,36 @@ def process_transaction(tx: TransactionRequest, x_user_id: str = Header(...)):
                 if row is None:
                     raise HTTPException(status_code=404, detail="Wallet not found")
 
-                current_balance = float(row[0])
-                new_balance = current_balance + tx.amount
+                if tx.transaction_id is not None:
+                    cur.execute(
+                        """
+                        SELECT user_id, amount, previous_balance, new_balance
+                        FROM wallet_transactions
+                        WHERE transaction_id = %s
+                        """,
+                        (tx.transaction_id,),
+                    )
+                    existing = cur.fetchone()
+                    if existing is not None:
+                        if (
+                            existing[0] != tx.user_id
+                            or Decimal(existing[1]) != transaction_amount
+                        ):
+                            raise HTTPException(
+                                status_code=409,
+                                detail="Transaction ID was already used with different data",
+                            )
+                        current_balance = float(existing[2])
+                        new_balance = float(existing[3])
+                        return {
+                            "status": "success",
+                            "user_id": tx.user_id,
+                            "previous_balance": current_balance,
+                            "new_balance": new_balance,
+                        }
+
+                current_balance = Decimal(row[0])
+                new_balance = current_balance + transaction_amount
 
                 if new_balance < 0:
                     raise HTTPException(
@@ -84,14 +167,30 @@ def process_transaction(tx: TransactionRequest, x_user_id: str = Header(...)):
 
                 cur.execute(
                     "UPDATE wallets SET balance = %s WHERE user_id = %s",
-                    (new_balance, authenticated_user_id),
+                    (new_balance, tx.user_id),
                 )
+                if tx.transaction_id is not None:
+                    cur.execute(
+                        """
+                        INSERT INTO wallet_transactions (
+                            transaction_id, user_id, amount, previous_balance, new_balance
+                        )
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (
+                            tx.transaction_id,
+                            tx.user_id,
+                            transaction_amount,
+                            current_balance,
+                            new_balance,
+                        ),
+                    )
     finally:
         conn.close()
 
     return {
         "status": "success",
-        "user_id": authenticated_user_id,
+        "user_id": tx.user_id,
         "previous_balance": current_balance,
         "new_balance": new_balance,
     }

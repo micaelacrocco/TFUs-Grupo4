@@ -3,7 +3,9 @@
 """Arranque del Servicio de Wallet: sanity check -> config -> FastAPI (ACID) -> Uvicorn."""
 
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncGenerator
 
 from fastapi import FastAPI
 
@@ -25,7 +27,13 @@ if errors:
 
 config = build_config(raw_config)
 
-app = FastAPI(title="InvestNow - Wallet Service (ACID Model)")
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
+    wallet_router.initialize_wallet_schema()
+    yield
+
+
+app = FastAPI(title="InvestNow - Wallet Service (ACID Model)", lifespan=lifespan)
 app.state.config = config
 
 # Aplicar aspecto transversal de logging
