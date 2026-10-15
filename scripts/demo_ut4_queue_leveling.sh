@@ -2,7 +2,7 @@
 # Demo UT4: Queue-Based Load Leveling en order_service.
 set -uo pipefail
 
-BASE_URL="http://localhost:8003"
+BASE_URL="http://localhost:8000"
 REQUESTS=200
 CONCURRENCY=200
 USER_ID=1
@@ -11,6 +11,13 @@ PRICE=0.01
 POLL_INTERVAL=1
 POLL_TIMEOUT=300
 REQUEST_TIMEOUT=10
+
+echo "--- Obteniendo token JWT mediante el Login simulado ---"
+LOGIN_RESPONSE=$(curl -s -X POST "$BASE_URL/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "inversor1", "password": "password123"}')
+  TOKEN=$(echo "$LOGIN_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('access_token', ''))")
+
 
 usage() {
   echo "Uso: $0 [--base-url URL] [--requests N] [--concurrency N] [--user-id N] [--asset-id N] [--price IMPORTE] [--poll-interval SEGUNDOS] [--poll-timeout SEGUNDOS] [--request-timeout SEGUNDOS]"
@@ -72,11 +79,13 @@ monotonic_time() {
 
 submit_one() {
   local request_number=$1 payload metadata="" curl_status
-  payload=$(printf '{"user_id":%s,"asset_id":%s,"quantity":1,"total_price":%s}' "$USER_ID" "$ASSET_ID" "$PRICE")
+  payload=$(printf '{"asset_id":%s,"quantity":1,"total_price":%s}' "$ASSET_ID" "$PRICE")
   if metadata=$(curl -sS --max-time "$REQUEST_TIMEOUT" \
     -o "$tmp_dir/body.$request_number" \
     -w '%{http_code} %{time_total}' \
     -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-User-Id: $USER_ID" \
     -d "$payload" "$BASE_URL/api/v1/orders" \
     2>"$tmp_dir/curl_error.$request_number"); then
     curl_status=0
@@ -169,7 +178,7 @@ echo "  Tiempo de envío concurrente: ${submit_elapsed} s"
 drain_started_at=$submit_started_at
 read_statuses() {
   if ! curl -fsS --max-time "$REQUEST_TIMEOUT" \
-    "$BASE_URL/api/v1/orders/$USER_ID" -o "$tmp_dir/history.json"; then
+    "$BASE_URL/api/v1/orders/$USER_ID" -o "$tmp_dir/history.json" -H "Authorization: Bearer $TOKEN"; then
     echo "No se pudo consultar GET /api/v1/orders/$USER_ID." >&2
     return 1
   fi
@@ -208,7 +217,7 @@ previous_completed=$completed
 elapsed=$(awk -v start="$drain_started_at" -v end="$now" 'BEGIN {printf "%.2f", end - start}')
 echo "  +${elapsed}s  COMPLETED $completed/$accepted  FAILED $failed  pendientes $pending  ritmo esperando siguiente muestra"
 if [ "$failed" -gt 0 ]; then
-  echo "Órdenes FAILED (primeras 10): $(head -n 10 "$tmp_dir/status.failed" | tr '\n' ' ')"
+  echo "Ordenes FAILED (primeras 10): $(head -n 10 "$tmp_dir/status.failed" | tr '\n' ' ')"
   exit 1
 fi
 

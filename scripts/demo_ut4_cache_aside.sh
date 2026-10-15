@@ -2,9 +2,17 @@
 # Demo UT4: Cache-Aside en catalog_service.
 set -uo pipefail
 
-URL="http://localhost:8002/api/v1/assets"
+GATEWAY_URL="http://localhost:8000"
+
+URL="http://localhost:8000/api/v1/catalog"
 REQUESTS=100
 TIMEOUT=5
+
+echo "--- Obteniendo token JWT mediante el Login simulado ---"
+LOGIN_RESPONSE=$(curl -s -X POST "$GATEWAY_URL/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "inversor1", "password": "password123"}')
+  TOKEN=$(echo "$LOGIN_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('access_token', ''))")
 
 usage() {
   echo "Uso: $0 [--url URL] [--requests N] [--timeout SEGUNDOS]"
@@ -61,6 +69,7 @@ for ((request_number = 1; request_number <= REQUESTS; request_number++)); do
   metadata=""
   if metadata=$(curl -sS --max-time "$TIMEOUT" \
     -D "$tmp_dir/headers" -o /dev/null \
+    -H "Authorization: Bearer $TOKEN" \
     -w '%{http_code} %{time_total}' "$URL" 2>"$tmp_dir/curl_error"); then
     read -r http_code elapsed_seconds <<< "$metadata"
     cache_status=$(awk '
