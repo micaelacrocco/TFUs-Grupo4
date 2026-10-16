@@ -14,7 +14,7 @@ documentación de cada entrega.
 | UT1    | Contexto de negocio, historias de usuario y requerimientos arquitectónicamente significativos | [`docs/UT1/ENTREGA.md`](docs/UT1/ENTREGA.md) |
 | UT2    | Tácticas de arquitectura (config externa, aspectos, sanity checking) | [`docs/UT2/ENTREGA.md`](docs/UT2/ENTREGA.md) |
 | UT3    | Descomposición en microservicios (Catálogo, Wallet, Órdenes) | [`docs/UT3/ENTREGA.md`](docs/UT3/ENTREGA.md) · [`docs/UT3/PRUEBAS_ENDPOINTS.md`](docs/UT3/PRUEBAS_ENDPOINTS.md) |
-| UT4 | Patrones de Arquitectura: Disponibilidad (Health Endpoint Monitoring, Retry) y Seguridad (Gatekeeper, Gateway Offloading) | [`docs/UT4/ENTREGA.md`](docs/UT4/ENTREGA.md) |
+| UT4 | Patrones de Arquitectura: Disponibilidad (Health Endpoint Monitoring, Retry), Rendimiento (Cache-Aside, Queue-Based Load Leveling) y Seguridad (Gatekeeper, Gateway Offloading) | [`docs/UT4/ENTREGA.md`](docs/UT4/ENTREGA.md) |
 
 UT1 es el trabajo de análisis previo (sin código asociado); UT2, UT3 y UT4 son
 las entregas con implementación, incrementales entre sí.
@@ -74,4 +74,5 @@ Para las demos puntuales de cada RNF de UT2 ver la sección de scripts en
 endpoints de UT3 ver [`docs/UT3/PRUEBAS_ENDPOINTS.md`](docs/UT3/PRUEBAS_ENDPOINTS.md);
 para las demos de ACID, servicios sin estado y escalabilidad horizontal de
 UT3 ver la sección 7 de [`docs/UT3/ENTREGA.md`](docs/UT3/ENTREGA.md).
-Para las pruebas de Health Checks y Retry de UT4 ver docs/UT4/ENTREGA.md. Para las demos de Gatekeeper y Gateway Offloading  ver docs/UT4/SECURITY.md.
+Para la explicación de los seis patrones y sus demos de UT4, ver
+[`docs/UT4/ENTREGA.md`](docs/UT4/ENTREGA.md).
