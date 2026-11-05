@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 pyyaml
 psycopg2-binary
+pika
