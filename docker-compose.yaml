@@ -1,18 +1,18 @@
 services:
   postgres_db:
     image: postgres:16-alpine
-    container_name: investnow_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:-order-db-demo}
+      WALLET_DB_PASSWORD: ${WALLET_DB_PASSWORD:-wallet-db-demo}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:-audit-db-demo}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_ut5:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -26,20 +26,38 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
+    hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-investnow}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-investnow}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     volumes:
-      - rabbitmqdata:/var/lib/rabbitmq
+      - rabbitmqdata_ut5:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
+    networks:
+      - investnow-net
+
+  rabbitmq_init:
+    build:
+      context: .
+      dockerfile: docker/order/Dockerfile
+    command: ["python", "-m", "app.events.setup"]
+    environment:
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_DEFAULT_USER:-investnow}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-investnow}
+      RABBITMQ_ADMIN_URL: amqp://${RABBITMQ_DEFAULT_USER:-investnow}:${RABBITMQ_DEFAULT_PASS:-investnow}@rabbitmq:5672/%2F
+      RABBITMQ_ORDER_PASSWORD: ${RABBITMQ_ORDER_PASSWORD:-order-mq-demo}
+      RABBITMQ_CATALOG_PASSWORD: ${RABBITMQ_CATALOG_PASSWORD:-catalog-mq-demo}
+      RABBITMQ_WALLET_PASSWORD: ${RABBITMQ_WALLET_PASSWORD:-wallet-mq-demo}
+      RABBITMQ_AUDIT_PASSWORD: ${RABBITMQ_AUDIT_PASSWORD:-audit-mq-demo}
+      RABBITMQ_LEGACY_PASSWORD: ${RABBITMQ_LEGACY_PASSWORD:-legacy-mq-demo}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     networks:
       - investnow-net
 
@@ -50,16 +68,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - CATALOG_SERVICE_URL=http://catalog_service:8000
-      - WALLET_SERVICE_URL=http://wallet_service:8000
-      - ORDER_SERVICE_URL=http://order_service:8000
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      CATALOG_SERVICE_URL: http://catalog_service:8000
+      WALLET_SERVICE_URL: http://wallet_service:8000
+      ORDER_SERVICE_URL: http://order_service:8000
     depends_on:
-      catalog_service:
-        condition: service_healthy
-      wallet_service:
-        condition: service_healthy
       order_service:
         condition: service_healthy
     networks:
@@ -77,21 +90,19 @@ services:
     build:
       context: .
       dockerfile: docker/wallet/Dockerfile
-    #ports:
-    #  - "8001:8000" --> Ya no es accesible desde afuera
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      DATABASE_URL: postgresql://wallet_app:${WALLET_DB_PASSWORD:-wallet-db-demo}@postgres_db:5432/wallet_db
+      EVENTS_RABBITMQ_URL: amqp://wallet:${RABBITMQ_WALLET_PASSWORD:-wallet-mq-demo}@rabbitmq:5672/%2F
     depends_on:
       postgres_db:
         condition: service_healthy
+      rabbitmq_init:
+        condition: service_completed_successfully
     networks:
       - investnow-net
     volumes:
-      - ./app/config:/app/config
+      - ./app/config:/app/app/config
     healthcheck:
-      # Health Endpoint Monitoring (UT4): este chequeo es "profundo" -- el
-      # propio GET /health de wallet_service valida la conexión a Postgres
-      # (ver app/wallet_main.py), no solo que el proceso esté vivo.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 5s
       timeout: 3s
@@ -103,15 +114,17 @@ services:
       context: .
       dockerfile: docker/catalog/Dockerfile
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-    #ports:
-    #  - "8002:8000" --> Ya no es accesible desde afuera
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      EVENTS_RABBITMQ_URL: amqp://catalog:${RABBITMQ_CATALOG_PASSWORD:-catalog-mq-demo}@rabbitmq:5672/%2F
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      rabbitmq_init:
+        condition: service_completed_successfully
     networks:
       - investnow-net
     volumes:
-      - ./app/config:/app/config
+      - ./app/config:/app/app/config
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 5s
@@ -123,45 +136,36 @@ services:
     build:
       context: .
       dockerfile: docker/order/Dockerfile
-    #ports:
-    #  - "8003:8000" --> Ya no es accesible desde afuera
     environment:
-      - CATALOG_SERVICE_URL=${CATALOG_SERVICE_URL}
-      - WALLET_SERVICE_URL=${WALLET_SERVICE_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://investnow:investnow@rabbitmq:5672/}
+      DATABASE_URL: postgresql://order_app:${ORDER_DB_PASSWORD:-order-db-demo}@postgres_db:5432/order_db
+      EVENTS_RABBITMQ_URL: amqp://order:${RABBITMQ_ORDER_PASSWORD:-order-mq-demo}@rabbitmq:5672/%2F
+      RABBITMQ_URL: amqp://order_legacy:${RABBITMQ_LEGACY_PASSWORD:-legacy-mq-demo}@rabbitmq:5672/ut4
     depends_on:
-      catalog_service:
-        condition: service_healthy
-      wallet_service:
-        condition: service_healthy
       postgres_db:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      rabbitmq_init:
+        condition: service_completed_successfully
     networks:
       - investnow-net
     volumes:
-      - ./app/config:/app/config
+      - ./app/config:/app/app/config
     healthcheck:
-      # Chequeo "profundo" (GET /health/dependencies, UT4): valida que
-      # order_service pueda alcanzar tanto a Catalog como a Wallet, sus
-      # únicas dos dependencias (ver diagrama de componentes de UT3).
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/dependencies', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 5s
       timeout: 3s
       retries: 5
       start_period: 5s
 
+  # Se retira cuando Order y Wallet completen la compra por eventos.
   order_worker:
     build:
       context: .
       dockerfile: docker/order-worker/Dockerfile
     environment:
-      - CATALOG_SERVICE_URL=${CATALOG_SERVICE_URL}
-      - WALLET_SERVICE_URL=${WALLET_SERVICE_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://investnow:investnow@rabbitmq:5672/}
+      CATALOG_SERVICE_URL: ${CATALOG_SERVICE_URL:-http://catalog_service:8000}
+      WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet_service:8000}
+      DATABASE_URL: postgresql://order_app:${ORDER_DB_PASSWORD:-order-db-demo}@postgres_db:5432/order_db
+      RABBITMQ_URL: amqp://order_legacy:${RABBITMQ_LEGACY_PASSWORD:-legacy-mq-demo}@rabbitmq:5672/ut4
     depends_on:
       catalog_service:
         condition: service_healthy
@@ -169,15 +173,30 @@ services:
         condition: service_healthy
       postgres_db:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      rabbitmq_init:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - investnow-net
 
+  audit_service:
+    build:
+      context: .
+      dockerfile: docker/audit/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://audit_app:${AUDIT_DB_PASSWORD:-audit-db-demo}@postgres_db:5432/audit_db
+      EVENTS_RABBITMQ_URL: amqp://audit:${RABBITMQ_AUDIT_PASSWORD:-audit-mq-demo}@rabbitmq:5672/%2F
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq_init:
+        condition: service_completed_successfully
+    networks:
+      - investnow-net
+
 volumes:
-  pgdata:
-  rabbitmqdata:
+  pgdata_ut5:
+  rabbitmqdata_ut5:
 
 networks:
   investnow-net:

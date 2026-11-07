@@ -56,7 +56,7 @@ def _forward(publish_channel: Any, target: str, body: bytes, properties: Any,
     headers[ATTEMPT_HEADER] = attempt
     headers[ERROR_HEADER] = error[:500]
     publish_channel.basic_publish(
-        exchange="",
+        exchange=broker.DELIVERY_EXCHANGE,
         routing_key=target,
         body=body,
         properties=pika.BasicProperties(
@@ -67,6 +67,7 @@ def _forward(publish_channel: Any, target: str, body: bytes, properties: Any,
             type=getattr(properties, "type", None),
             headers=headers,
         ),
+        mandatory=True,
     )
 
 
@@ -78,6 +79,8 @@ def handle_delivery(queue: str, handler: Handler, channel: Any, publish_channel:
 
     try:
         event = Event.from_json(body)
+        if method.exchange == contract.EXCHANGE and method.routing_key != event.routing_key:
+            raise InvalidEventError("Event type does not match the routing key")
     except InvalidEventError as exc:
         error, permanent = f"invalid event: {exc}", True
     else:
@@ -107,7 +110,6 @@ def run_consumer(queue: str, handler: Handler) -> None:
         try:
             connection = broker.connect()
             channel = connection.channel()
-            broker.declare_topology(channel)
             publish_channel = broker.open_publish_channel(connection)
             channel.basic_qos(prefetch_count=1)
             channel.basic_consume(

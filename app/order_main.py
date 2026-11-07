@@ -21,7 +21,7 @@ from app.order_store import initialize_order_schema
 from app.routers import order_router  # Router específico de gestión de órdenes
 from app.routers.health_router import build_health_router
 
-CONFIG_PATH = Path(__file__).parent.parent / "config" / "config.yaml"
+CONFIG_PATH = Path(__file__).parent / "config" / "config.yaml"
 
 raw_config = load_raw_config(CONFIG_PATH)
 errors = validate(raw_config)

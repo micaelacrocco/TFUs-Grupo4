@@ -121,7 +121,6 @@ def run_outbox_relay(database_url: str) -> None:
         try:
             amqp_connection = broker.connect()
             publish_channel = broker.open_publish_channel(amqp_connection)
-            broker.declare_topology(publish_channel)
             db_connection = psycopg2.connect(database_url)
             logger.info("Outbox relay started")
             while True:
