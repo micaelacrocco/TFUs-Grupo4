@@ -303,9 +303,11 @@ ORD --> Cliente : estado actual de la orden
 @enduml
 ```
 
-Cada consumidor confirma (*ack*) el mensaje solo después de hacer commit
-de su efecto. Si el commit falla, el mensaje vuelve a la cola. Si falla
-más de N veces, va a la DLQ.
+Cuando el procesamiento sale bien, el consumidor confirma (*ack*) el
+mensaje después de terminar su trabajo. Si hay una falla técnica, publica
+el mensaje en la cola de reintento y espera la confirmación del broker
+antes de dar el *ack*. Si se agotan los intentos o el error es permanente,
+lo envía a la DLQ.
 
 ---
 
@@ -410,11 +412,12 @@ app financiera ambos resultados son inaceptables.
 - **Queue-Based Load Leveling.** Una cola durable por consumidor con
   mensajes persistentes. Si Wallet está caído, los eventos se acumulan y
   se procesan cuando vuelve. La falla se convierte en demora.
-- **Retry + Dead Letter Queue.** El consumidor hace *ack* solo después de
-  confirmar su efecto en la base. Ante un error, hace *nack* y el broker
-  reintenta. Después de N intentos el mensaje pasa a la DLQ para revisión
-  manual, en lugar de reencolarse sin fin (problema que tiene hoy
-  `order_worker.py`).
+- **Retry + Dead Letter Queue.** Ante una falla técnica, el consumidor
+  publica el mensaje en la cola de reintento. Cinco segundos después,
+  RabbitMQ lo devuelve a la cola principal. Si falla en el quinto intento
+  o el error es permanente, el consumidor lo manda a la DLQ para revisar
+  qué pasó. El consumidor da el *ack* cuando el broker confirma que recibió
+  el mensaje reenviado.
 - **Consumidor idempotente.** El outbox y el retry garantizan entrega
   *at-least-once*, así que los duplicados son esperables. Wallet usa
   `order_id` como clave única del movimiento: un `AssetValidated`
@@ -432,8 +435,9 @@ efecto de negocio con at-least-once más idempotencia.
 title Falacia 1 - Wallet cae y un evento llega duplicado
 
 participant "Catalog Service" as CAT
-queue "cola wallet.q" as Q
-queue "wallet.dlq" as DLQ
+queue "wallet.events" as Q
+queue "wallet.events.retry" as R
+queue "wallet.events.dlq" as DLQ
 participant "Wallet Service" as WAL
 database "wallet_db" as WDB
 
@@ -442,7 +446,7 @@ note over Q : Wallet caído:\nel evento espera (cola durable)
 
 == Wallet vuelve ==
 Q -> WAL : AssetValidated(42)
-WAL -> WDB : BEGIN; INSERT tx(order_id=42); UPDATE saldo;\nINSERT outbox(FundsDebited); COMMIT
+WAL -> WDB : BEGIN\nINSERT tx(order_id=42)\nUPDATE saldo\nINSERT outbox(FundsDebited)\nCOMMIT
 WAL -x Q : ack perdido (Wallet reinicia)
 
 == Reentrega: at-least-once ==
@@ -453,9 +457,15 @@ note right of WAL : Idempotencia:\nno se debita de nuevo
 WAL -> Q : ack
 
 == Mensaje que falla siempre ==
-Q -> WAL : AssetValidated(43)
-WAL -> Q : nack (error), reintento 1..N
-Q -> DLQ : supera N intentos
+loop Intentos 1 a 4
+  Q -> WAL : AssetValidated(43)
+  WAL -> R : reenvío confirmado
+  WAL -> Q : ack
+  R -> Q : vuelve después de 5 s
+end
+Q -> WAL : quinto intento
+WAL -> DLQ : reenvío confirmado
+WAL -> Q : ack
 @enduml
 ```
 
@@ -492,9 +502,8 @@ ya es un proceso con estados.
 
 **Problema.** En EDA, el broker es un canal que todos los servicios
 consideran confiable: si alguien publica un `FundsDebited` falso, Order
-marcaría como pagada una orden que nunca se cobró. Hoy, además,
-`docker-compose.yaml` publica al host los puertos de RabbitMQ (5672 y
-15672) y de Postgres (5432).
+marcaría como pagada una orden que nunca se cobró. En el Compose de UT4,
+RabbitMQ y Postgres publicaban puertos en el host.
 
 **Decisiones y patrones:**
 
@@ -503,9 +512,12 @@ marcaría como pagada una orden que nunca se cobró. Hoy, además,
   servicio.
 - **Broker y bases solo en la red interna.** Se dejan de publicar sus
   puertos al host.
-- **Credenciales por servicio en RabbitMQ** con permisos mínimos: cada
-  servicio solo puede publicar en las *routing keys* de su dominio (por
-  ejemplo, solo Wallet puede publicar `wallet.*`).
+- **Credenciales por servicio en RabbitMQ.** Cada servicio puede leer
+  su propia cola y publicar únicamente en las claves que le corresponden.
+  Por ejemplo, Catálogo puede publicar `order.asset_validated` y
+  `order.rejected`. Solo Wallet puede publicar `wallet.funds_debited` y
+  `wallet.funds_rejected`. Audit escucha los eventos y solo publica en
+  sus destinos de reintento y DLQ.
 
 #### 4.4 Representación en los modelos
 
@@ -554,7 +566,7 @@ que se procesen en ese lapso, y el usuario tiene que volver a enviarlas.
 | Comunicación por eventos (sin llamadas sincrónicas en la compra) | Elimina el acoplamiento temporal: Order no necesita que Wallet esté vivo para aceptar ni para avanzar la orden |
 | Colas durables por consumidor | La caída de un servicio se convierte en **demora**, no en falla. Los eventos esperan |
 | Transactional Outbox | Ninguna orden aceptada queda sin su evento, aunque el broker o el servicio caigan |
-| Retry con DLQ | Las fallas transitorias se reintentan sin límite de tiempo. Solo los errores permanentes se aíslan en la DLQ |
+| Retry con DLQ | Las fallas técnicas tienen hasta cinco intentos. Los errores permanentes van directo a la DLQ. Si un consumidor está apagado, los mensajes esperan en su cola |
 | Consumidor idempotente | Hace seguras las reentregas que provoca la recuperación |
 | Base por servicio | La falla o carga de una base no detiene a los demás servicios |
 
@@ -574,7 +586,7 @@ Se ejecutarán los mismos experimentos sobre la arquitectura de UT4
 | P1 | **Caída de Wallet** | Enviar 50 órdenes válidas (1 por segundo). A los 10 s, `docker compose stop wallet_service`. A los 70 s, `start`. Esperar a que se vacíen las colas | % de `202` aceptadas, % `COMPLETED` y `FAILED` finales, órdenes perdidas (aceptadas sin estado final), tiempo hasta drenar la cola |
 | P2 | **Reentrega e idempotencia** | Durante P1, matar Wallet (`kill`) mientras procesa, para forzar reentregas | Débitos duplicados (filas en `wallet_transactions` por `order_id` > 1), saldo final = saldo inicial − Σ órdenes completadas |
 | P3 | **Caída de Catalog** | Igual que P1, pero deteniendo `catalog_service` | Mismas métricas que P1 |
-| P4 | **Mensaje irrecuperable** | Publicar un evento malformado | El mensaje termina en la DLQ tras N intentos y no bloquea a las demás órdenes |
+| P4 | **Mensaje irrecuperable** | Publicar un evento malformado | El mensaje va directo a la DLQ y el consumidor sigue procesando otros eventos |
 
 **Resultados esperados**
 
@@ -587,7 +599,7 @@ Se ejecutarán los mismos experimentos sobre la arquitectura de UT4
 | Tiempo hasta estado final durante la caída | ~3 s (falla rápido) | Hasta la recuperación de Wallet (~60 s) |
 
 Los resultados se documentarán con la salida del script, el estado final
-de las tablas `orders` y `wallet_transactions`, y capturas de la consola
-de RabbitMQ (largo de colas y DLQ). Si la mejora no se verifica, se
+de las tablas `orders` y `wallet_transactions`, y el estado de las colas
+y DLQ consultado desde el contenedor de RabbitMQ. Si la mejora no se verifica, se
 analizará la causa: por ejemplo, el prefetch del consumidor o las órdenes
 que vencen en la DLQ.
