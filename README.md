@@ -22,7 +22,7 @@ existe.
 
 ```bash
 test -f .env || cp .env.example .env
-docker compose up --build -d --wait
+docker compose up --build -d --wait --remove-orphans
 ```
 
 El Gateway queda en [localhost:8000](http://localhost:8000). Podés comprobar
@@ -40,11 +40,14 @@ que publica un puerto en tu máquina.
 | `redis` | Guarda en caché las consultas del catálogo. |
 | `rabbitmq` | Distribuye los eventos y guarda los mensajes pendientes en las colas. |
 | `rabbitmq_init` | Crea los exchanges, las colas y los permisos al levantar el stack. Termina una vez que los configura. |
-| `order_worker` | Sigue completando las compras que entran por la API hasta que se integren las tandas 2 y 3. |
 
 UT5 crea sus propios volúmenes para Postgres y RabbitMQ. Si ya tenías una
 demo de UT4, sus datos quedan en los volúmenes anteriores. Para comparar
 con UT4, el plan toma el commit `7373fdf` como punto de partida.
+
+Compose ya no levanta el worker de UT4. Mientras se integra la compra por
+eventos, `POST /api/v1/orders` devuelve `503`. Podés probar Catálogo y
+Audit con el ejemplo de abajo.
 
 ## Cómo probar Catálogo y Audit
 

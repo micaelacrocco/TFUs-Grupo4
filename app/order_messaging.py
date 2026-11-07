@@ -5,13 +5,13 @@ from typing import Any
 import pika
 
 ORDERS_QUEUE = "orders_queue"
-RABBITMQ_URL = os.getenv(
-    "RABBITMQ_URL",
-    "amqp://investnow:investnow@rabbitmq:5672/",
-)
+RABBITMQ_URL = os.getenv("RABBITMQ_URL")
 
 
 def open_orders_channel() -> tuple[Any, Any]:
+    if not RABBITMQ_URL:
+        raise RuntimeError("La cola de órdenes de UT4 está deshabilitada")
+
     connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
     try:
         channel = connection.channel()

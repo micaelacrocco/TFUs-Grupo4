@@ -3,7 +3,7 @@ import pika
 
 from fastapi import APIRouter, HTTPException, Header, status
 
-from app.order_messaging import publish_order
+from app.order_messaging import RABBITMQ_URL, publish_order
 from app.order_models import OrderRequest
 from app.order_store import (
     create_order as create_order_record,
@@ -21,6 +21,12 @@ def create_order(
     x_user_id: str = Header(...)
 ):
     """Valida la orden, la persiste como pendiente y la publica en RabbitMQ."""
+    if not RABBITMQ_URL:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La compra por eventos todavía no está integrada.",
+        )
+
     order_data = order.model_dump()
     order_data["user_id"] = x_user_id
 

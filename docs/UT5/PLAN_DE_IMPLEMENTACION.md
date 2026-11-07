@@ -124,7 +124,7 @@ Catalog, Audit y `README.md`.
 |---|---|
 | 1.1 | ✅ Librería `app/events/` (Paso 0) |
 | 1.2 | ✅ `order_db`, `wallet_db` y `audit_db` en `init.sql`. Cada servicio tiene su propio `DATABASE_URL`. |
-| 1.3 | Compose ya deja RabbitMQ y Postgres en la red interna, configura usuarios de RabbitMQ por servicio e incluye `audit_service`. Queda retirar `order_worker` al integrar las líneas 2 y 3. **Esta línea coordina los cambios de Compose.** |
+| 1.3 | ✅ Compose deja RabbitMQ y Postgres en la red interna, configura usuarios por servicio e incluye `audit_service`. Se retiró `order_worker` de Compose. **Esta línea coordina los cambios de Compose.** |
 | 1.4 | ✅ Catálogo consume `OrderPlaced` y publica `AssetValidated` u `OrderRejected`. |
 | 1.5 | ✅ Audit consume `audit.events` y guarda cada evento en `audit_db`. |
 | 1.6 | ✅ El `README.md` explica cómo levantar UT5 y probar Catálogo y Audit. |

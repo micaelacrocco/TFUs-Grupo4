@@ -7,13 +7,11 @@ import re
 import time
 from contextlib import closing
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from app.events import broker, contract
 
 NO_ACCESS = "^$"
-LEGACY_VHOST = "ut4"
 # Audit escribe únicamente en sus colas de retry y DLQ.
 SERVICES = {
     "order": (contract.QUEUE_ORDER, (contract.ORDER_PLACED,)),
@@ -57,16 +55,6 @@ def wait_for_management() -> None:
             return
 
 
-def set_permissions(
-    vhost: str, username: str, *, configure: str, write: str, read: str
-) -> None:
-    management_request(
-        "PUT",
-        f"permissions/{quote(vhost, safe='')}/{username}",
-        {"configure": configure, "write": write, "read": read},
-    )
-
-
 def setup_service(username: str, queue: str, event_types: tuple[str, ...]) -> None:
     management_request(
         "PUT",
@@ -77,12 +65,9 @@ def setup_service(username: str, queue: str, event_types: tuple[str, ...]) -> No
     if event_types:
         exchanges.append(contract.EXCHANGE)
 
-    set_permissions(
-        "/",
-        username,
-        configure=NO_ACCESS,
-        write=exact_names(*exchanges),
-        read=exact_names(queue),
+    management_request(
+        "PUT", f"permissions/%2F/{username}",
+        {"configure": NO_ACCESS, "write": exact_names(*exchanges), "read": exact_names(queue)},
     )
     management_request(
         "PUT", f"topic-permissions/%2F/{username}",
@@ -111,20 +96,6 @@ def main() -> None:
     for username, (queue, event_types) in SERVICES.items():
         setup_service(username, queue, event_types)
 
-    # La cola de trabajo de UT4 se mantiene aislada hasta integrar Order y Wallet.
-    management_request("PUT", f"vhosts/{LEGACY_VHOST}", {})
-    management_request(
-        "PUT",
-        "users/order_legacy",
-        {"password": os.environ["RABBITMQ_LEGACY_PASSWORD"], "tags": ""},
-    )
-    set_permissions(
-        LEGACY_VHOST,
-        "order_legacy",
-        configure=exact_names("orders_queue"),
-        write=exact_names("amq.default"),
-        read=exact_names("orders_queue"),
-    )
     print("Topología y permisos de RabbitMQ configurados.")
 
 

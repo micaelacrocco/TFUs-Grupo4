@@ -54,7 +54,6 @@ services:
       RABBITMQ_CATALOG_PASSWORD: ${RABBITMQ_CATALOG_PASSWORD:-catalog-mq-demo}
       RABBITMQ_WALLET_PASSWORD: ${RABBITMQ_WALLET_PASSWORD:-wallet-mq-demo}
       RABBITMQ_AUDIT_PASSWORD: ${RABBITMQ_AUDIT_PASSWORD:-audit-mq-demo}
-      RABBITMQ_LEGACY_PASSWORD: ${RABBITMQ_LEGACY_PASSWORD:-legacy-mq-demo}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -139,7 +138,6 @@ services:
     environment:
       DATABASE_URL: postgresql://order_app:${ORDER_DB_PASSWORD:-order-db-demo}@postgres_db:5432/order_db
       EVENTS_RABBITMQ_URL: amqp://order:${RABBITMQ_ORDER_PASSWORD:-order-mq-demo}@rabbitmq:5672/%2F
-      RABBITMQ_URL: amqp://order_legacy:${RABBITMQ_LEGACY_PASSWORD:-legacy-mq-demo}@rabbitmq:5672/ut4
     depends_on:
       postgres_db:
         condition: service_healthy
@@ -155,29 +153,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
-
-  # Se retira cuando Order y Wallet completen la compra por eventos.
-  order_worker:
-    build:
-      context: .
-      dockerfile: docker/order-worker/Dockerfile
-    environment:
-      CATALOG_SERVICE_URL: ${CATALOG_SERVICE_URL:-http://catalog_service:8000}
-      WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet_service:8000}
-      DATABASE_URL: postgresql://order_app:${ORDER_DB_PASSWORD:-order-db-demo}@postgres_db:5432/order_db
-      RABBITMQ_URL: amqp://order_legacy:${RABBITMQ_LEGACY_PASSWORD:-legacy-mq-demo}@rabbitmq:5672/ut4
-    depends_on:
-      catalog_service:
-        condition: service_healthy
-      wallet_service:
-        condition: service_healthy
-      postgres_db:
-        condition: service_healthy
-      rabbitmq_init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-    networks:
-      - investnow-net
 
   audit_service:
     build:
