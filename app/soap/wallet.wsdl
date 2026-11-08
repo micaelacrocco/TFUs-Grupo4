@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="http://investnow.com/wallet"
+                  targetNamespace="http://investnow.com/wallet"
+                  name="WalletService">
+
+    <!-- Tipos de datos (XSD) -->
+    <wsdl:types>
+        <xsd:schema targetNamespace="http://investnow.com/wallet" elementFormDefault="qualified">
+            
+            <xsd:element name="GetWalletRequest">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="user_id" type="xsd:int"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+            <xsd:element name="GetWalletResponse">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="user_id" type="xsd:int"/>
+                        <xsd:element name="balance" type="xsd:decimal"/>
+                        <xsd:element name="status" type="xsd:string"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+        </xsd:schema>
+    </wsdl:types>
+
+    <!-- Mensajes -->
+    <wsdl:message name="GetWalletInput">
+        <wsdl:part name="parameters" element="tns:GetWalletRequest"/>
+    </wsdl:message>
+    <wsdl:message name="GetWalletOutput">
+        <wsdl:part name="parameters" element="tns:GetWalletResponse"/>
+    </wsdl:message>
+
+    <!-- Puerto / Operaciones -->
+    <wsdl:portType name="WalletPortType">
+        <wsdl:operation name="GetWallet">
+            <wsdl:input message="tns:GetWalletInput"/>
+            <wsdl:output message="tns:GetWalletOutput"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <!-- Binding SOAP 1.1 sobre HTTP -->
+    <wsdl:binding name="WalletBinding" type="tns:WalletPortType">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="GetWallet">
+            <soap:operation soapAction="http://investnow.com/wallet/GetWallet"/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <!-- Servicio y Endpoint URL -->
+    <wsdl:service name="WalletService">
+        <wsdl:port name="WalletPort" binding="tns:WalletBinding">
+            <soap:address location="http://wallet_service:8000/soap/wallet"/>
+        </wsdl:port>
+    </wsdl:service>
+
+</wsdl:definitions>
