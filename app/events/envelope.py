@@ -35,6 +35,8 @@ class Event:
         return contract.ROUTING_KEYS[self.event_type]
 
     def validate(self) -> None:
+        if not isinstance(self.event_type, str):
+            raise InvalidEventError("Event type must be a string")
         expected = contract.PAYLOAD_FIELDS.get(self.event_type)
         if expected is None:
             raise InvalidEventError(f"Unknown event type: {self.event_type!r}")

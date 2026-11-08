@@ -8,21 +8,23 @@ import pika
 from app.events import contract
 from app.events.envelope import Event
 
-RABBITMQ_URL = os.getenv(
-    "RABBITMQ_URL",
-    "amqp://investnow:investnow@rabbitmq:5672/",
-)
+DELIVERY_EXCHANGE = "investnow.delivery"
 
 
-def connect() -> pika.BlockingConnection:
-    return pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+def connect(url: str | None = None) -> pika.BlockingConnection:
+    url = url or os.getenv("EVENTS_RABBITMQ_URL") or os.getenv(
+        "RABBITMQ_URL", "amqp://investnow:investnow@rabbitmq:5672/"
+    )
+    return pika.BlockingConnection(pika.URLParameters(url))
 
 
 def declare_topology(channel: Any) -> None:
-    """Declara exchange, colas, colas de retry y DLQ. Es idempotente:
-    cada servicio la llama al arrancar, sin importar el orden."""
+    """Inicializa la topología con las credenciales de administración del broker."""
     channel.exchange_declare(
         exchange=contract.EXCHANGE, exchange_type="topic", durable=True
+    )
+    channel.exchange_declare(
+        exchange=DELIVERY_EXCHANGE, exchange_type="topic", durable=True
     )
     for queue, binding_keys in contract.QUEUE_BINDINGS.items():
         channel.queue_declare(queue=queue, durable=True)
@@ -40,7 +42,12 @@ def declare_topology(channel: Any) -> None:
                 "x-dead-letter-routing-key": queue,
             },
         )
-        channel.queue_declare(queue=contract.dead_letter_queue(queue), durable=True)
+        dlq = contract.dead_letter_queue(queue)
+        channel.queue_declare(queue=dlq, durable=True)
+        for destination in (contract.retry_queue(queue), dlq):
+            channel.queue_bind(
+                queue=destination, exchange=DELIVERY_EXCHANGE, routing_key=destination
+            )
 
 
 def open_publish_channel(connection: pika.BlockingConnection) -> Any:
@@ -75,7 +82,6 @@ def publish_event(event: Event) -> None:
     connection = connect()
     try:
         channel = open_publish_channel(connection)
-        declare_topology(channel)
         publish(channel, event)
     finally:
         connection.close()

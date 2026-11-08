@@ -27,8 +27,12 @@ cambio al contrato se acuerda entre todos** y se hace solo en
     mensaje vuelve a la principal.
   - `<cola>.dlq`: mensajes descartados después de 5 intentos o con error
     permanente.
-- `declare_topology(channel)` declara todo de forma idempotente. Cada
-  servicio la llama al arrancar.
+- `rabbitmq_init` crea los exchanges, las colas y los permisos una vez
+  que RabbitMQ está disponible. Cada servicio usa su propia credencial
+  mediante `EVENTS_RABBITMQ_URL`.
+- Los consumidores envían los reintentos y los mensajes descartados por
+  `investnow.delivery`. Cada servicio solo puede escribir en sus propios
+  destinos de reintento y DLQ.
 
 ### Eventos y routing keys
 
@@ -71,7 +75,7 @@ contrato. Si no los tiene, falla al publicar y no en el consumidor.
 
 ```python
 from app.events import (
-    Event, contract, declare_topology,
+    Event, contract,
     save_to_outbox, ensure_outbox_schema, start_outbox_relay,
     mark_processed, ensure_inbox_schema,
     start_consumer, PermanentError,
@@ -119,11 +123,11 @@ Catalog, Audit y `README.md`.
 | # | Tarea |
 |---|---|
 | 1.1 | ✅ Librería `app/events/` (Paso 0) |
-| 1.2 | Base por servicio: `order_db`, `wallet_db` y `audit_db` en `init.sql`, con un `DATABASE_URL` por servicio |
-| 1.3 | `docker-compose.yaml`: quitar los puertos de RabbitMQ y Postgres, crear usuarios de RabbitMQ por servicio, agregar `audit_service` y quitar `order_worker`. **Las otras líneas le piden a esta los cambios de compose** |
-| 1.4 | Catalog: consumidor de `order.placed` que publica `AssetValidated` u `OrderRejected` |
-| 1.5 | Audit Service: consumidor de `audit.events` que guarda cada evento en `audit_db` |
-| 1.6 | Actualizar el `README.md` |
+| 1.2 | ✅ `order_db`, `wallet_db` y `audit_db` en `init.sql`. Cada servicio tiene su propio `DATABASE_URL`. |
+| 1.3 | ✅ Compose deja RabbitMQ y Postgres en la red interna, configura usuarios por servicio e incluye `audit_service`. Se retiró `order_worker` de Compose. **Esta línea coordina los cambios de Compose.** |
+| 1.4 | ✅ Catálogo consume `OrderPlaced` y publica `AssetValidated` u `OrderRejected`. |
+| 1.5 | ✅ Audit consume `audit.events` y guarda cada evento en `audit_db`. |
+| 1.6 | ✅ El `README.md` explica cómo levantar UT5 y probar Catálogo y Audit. |
 
 ## Línea 2 — Order Service y pruebas de disponibilidad
 

@@ -16,12 +16,12 @@ import psycopg2
 from app.aspects.logging_aspect import add_logging_aspect
 from app.config.loader import build_config, load_raw_config
 from app.config.validator import validate
-from app.order_messaging import open_orders_channel
+from app.events import broker
 from app.order_store import initialize_order_schema
 from app.routers import order_router  # Router específico de gestión de órdenes
 from app.routers.health_router import build_health_router
 
-CONFIG_PATH = Path(__file__).parent.parent / "config" / "config.yaml"
+CONFIG_PATH = Path(__file__).parent / "config" / "config.yaml"
 
 raw_config = load_raw_config(CONFIG_PATH)
 errors = validate(raw_config)
@@ -64,7 +64,7 @@ def check_dependencies() -> dict:
         except httpx.RequestError as exc:
             results[name] = {"status": "down", "detail": str(exc)}
     try:
-        connection, _ = open_orders_channel()
+        connection = broker.connect()
         connection.close()
         results["rabbitmq"] = {"status": "ok"}
     except (pika.exceptions.AMQPError, OSError, ValueError) as exc:
