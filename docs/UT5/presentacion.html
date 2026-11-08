@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InvestNow · UT5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#fbfaf6; --paper-2:#f2efe7; --line:#ddd7ca; --ink:#1c2430; --ink-2:#4a5464; --ink-3:#7b8494;
+  --navy:#1f3a5f; --navy-soft:#e3eaf3;
+  --teal:#0f766e; --teal-soft:#dcf0ec;
+  --red:#b4432f; --red-soft:#f7e2dc;
+  --amber:#a8670f; --amber-soft:#f7ead2;
+  --violet:#5b4b9a; --violet-soft:#e8e4f4;
+  --green:#2f7a3d; --green-soft:#e0f0e2;
+  --grey-soft:#ebe9e3;
+  --serif:"Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans:Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#2a2f38;overflow:hidden}
+body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased}
+
+/* ---------- escenario 16:9 escalado ---------- */
+#viewport{position:fixed;inset:0;display:grid;place-items:center}
+#deck{width:1280px;height:720px;position:relative;transform-origin:center center;flex:none}
+.slide{position:absolute;inset:0;background:var(--paper);padding:56px 72px 64px;display:flex;flex-direction:column;
+  opacity:0;visibility:hidden;transition:opacity .35s ease, visibility .35s;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.slide.active{opacity:1;visibility:visible}
+.slide.active .rise{animation:rise .55s ease both}
+.slide.active .rise.d1{animation-delay:.08s}.slide.active .rise.d2{animation-delay:.16s}
+.slide.active .rise.d3{animation-delay:.24s}.slide.active .rise.d4{animation-delay:.32s}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.slide,.slide.active .rise{transition:none;animation:none}}
+
+/* ---------- tipografía ---------- */
+.kicker{font:600 13px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);display:flex;gap:10px;align-items:center;margin-bottom:14px}
+.kicker b{color:var(--navy);font-weight:700}
+.kicker::after{content:"";flex:1;height:1px;background:var(--line)}
+h1{font:700 64px/1.05 var(--serif);letter-spacing:-.01em}
+h2{font:600 38px/1.15 var(--serif);letter-spacing:-.005em;margin-bottom:6px}
+.lead{font-size:19px;line-height:1.5;color:var(--ink-2);max-width:880px}
+.mono{font-family:var(--mono);font-size:.92em}
+.small{font-size:14px;color:var(--ink-3)}
+.body{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0}
+.foot{position:absolute;left:72px;right:72px;bottom:22px;display:flex;justify-content:space-between;font-size:12px;color:var(--ink-3);letter-spacing:.04em}
+
+/* ---------- componentes ---------- */
+.grid{display:grid;gap:20px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 22px 20px}
+.card h3{font:600 20px/1.25 var(--serif);margin:12px 0 6px}
+.card p{font-size:15px;line-height:1.45;color:var(--ink-2)}
+.icon{width:44px;height:44px;border-radius:11px;display:grid;place-items:center}
+.icon svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tag{display:inline-block;font:600 12px/1 var(--mono);padding:6px 9px;border-radius:6px;background:var(--paper-2);color:var(--ink-2);margin:2px 4px 2px 0}
+.pill{display:inline-flex;align-items:center;gap:8px;font:600 13px/1 var(--sans);padding:8px 13px;border-radius:999px}
+.c-navy{background:var(--navy-soft);color:var(--navy)}.c-teal{background:var(--teal-soft);color:var(--teal)}
+.c-red{background:var(--red-soft);color:var(--red)}.c-amber{background:var(--amber-soft);color:var(--amber)}
+.c-violet{background:var(--violet-soft);color:var(--violet)}.c-green{background:var(--green-soft);color:var(--green)}
+.c-grey{background:var(--grey-soft);color:var(--ink-2)}
+svg.diagram{width:100%;height:auto;display:block;font-family:var(--sans)}
+svg.diagram text:not([fill]){fill:var(--ink)}
+.callout{border-left:4px solid var(--navy);background:#fff;padding:14px 20px;border-radius:0 10px 10px 0;font-size:17px;line-height:1.45;color:var(--ink-2)}
+.callout strong{color:var(--ink)}
+
+/* portada */
+.cover{background:var(--navy);color:#fff;padding:72px 88px}
+.cover .kicker{color:#a9b9cf}.cover .kicker b{color:#fff}.cover .kicker::after{background:rgba(255,255,255,.2)}
+.cover h1{color:#fff;font-size:72px;max-width:980px}
+.cover .lead{color:#cbd6e4;font-size:22px;margin-top:22px}
+.cover .foot{color:#8fa3bf}
+.cover-flow{display:flex;align-items:center;gap:18px;margin-top:56px}
+.cover-flow .pill{font-size:15px;padding:11px 18px}
+
+/* agenda */
+.agenda{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:34px}
+.agenda .step{border-top:4px solid var(--navy);padding-top:18px}
+.agenda .num{font:700 44px/1 var(--serif);color:var(--navy)}
+.agenda h3{font:600 21px/1.25 var(--serif);margin:14px 0 8px}
+.agenda p{font-size:15px;color:var(--ink-2);line-height:1.45}
+
+/* matriz */
+table.matrix{width:100%;border-collapse:separate;border-spacing:0;font-size:16px;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.matrix th,.matrix td{padding:11px 18px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.matrix tr:last-child td{border-bottom:none}
+.matrix thead th{background:var(--paper-2);font:600 13px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.matrix td.crit{font-weight:600;width:34%}
+.matrix td.v{width:33%;color:var(--ink-2);font-size:14.5px}
+.dot{display:inline-block;width:16px;height:16px;border-radius:50%;vertical-align:-3px;margin-right:10px;border:2px solid currentColor}
+.dot.full{background:currentColor}.dot.half{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
+.matrix tr.tie td{background:#fffaf0}
+.matrix.q td{padding:16px 18px}.matrix.q td.crit{width:30%;font-size:17px}.matrix.q td.v{width:31%;font-size:15.5px;line-height:1.4}.matrix.q strong{color:var(--ink)}
+
+/* barras */
+.bars{display:flex;flex-direction:column;gap:16px}
+.bar-row{display:grid;grid-template-columns:120px 1fr 70px;align-items:center;gap:14px;font-size:15px}
+.bar-track{height:34px;background:var(--paper-2);border-radius:8px;overflow:hidden}
+.bar-fill{height:100%;border-radius:8px;transform-origin:left;}
+.slide.active .bar-fill{animation:grow .9s .25s cubic-bezier(.2,.7,.2,1) both}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.bar-val{font:700 22px/1 var(--serif);text-align:right}
+
+/* listas de trade-off */
+.ticks{list-style:none;display:flex;flex-direction:column;gap:12px}
+.ticks li{display:flex;gap:12px;font-size:17px;line-height:1.4;align-items:flex-start}
+.ticks li::before{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 14px/1 var(--sans);margin-top:-1px}
+.ticks.plus li::before{content:"+";background:var(--teal-soft);color:var(--teal)}
+.ticks.minus li::before{content:"−";background:var(--red-soft);color:var(--red)}
+
+/* controles */
+#progress{position:fixed;left:0;bottom:0;height:4px;background:#5f87b8;transition:width .3s;z-index:5}
+#hud{position:fixed;right:16px;top:12px;color:#c9cfd8;font:500 12px/1 var(--sans);z-index:5;display:flex;gap:10px;align-items:center;opacity:0;transition:opacity .3s;background:rgba(20,24,30,.7);padding:6px 8px;border-radius:10px}
+#hud.show{opacity:1}
+#hud button{background:rgba(255,255,255,.12);border:0;color:#fff;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:15px}
+#hud button:hover{background:rgba(255,255,255,.25)}
+@media print{
+  html,body{overflow:visible;background:#fff}#viewport{position:static;display:block}
+  #deck{transform:none!important}.slide{position:relative;opacity:1;visibility:visible;page-break-after:always;box-shadow:none}
+  #hud,#progress{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- marcadores de flecha compartidos -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="a-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a5464"/></marker>
+    <marker id="a-grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9aa2ae"/></marker>
+    <marker id="a-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f766e"/></marker>
+    <marker id="a-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b4432f"/></marker>
+    <marker id="a-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a8670f"/></marker>
+    <marker id="a-navy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f3a5f"/></marker>
+  </defs>
+</svg>
+
+<div id="viewport"><div id="deck">
+
+<!-- ============ 1. PORTADA ============ -->
+<section class="slide cover">
+  <div class="kicker"><b>TFU · Unidad Temática 5</b> Estilos de arquitectura</div>
+  <div class="body">
+    <h1 class="rise">InvestNow: de la orquestación sincrónica a una arquitectura basada en eventos</h1>
+    <p class="lead rise d1">Evaluación de estilos SOA y EDA para una plataforma que mueve dinero, y diseño de la solución adoptada.</p>
+    <div class="cover-flow rise d2">
+      <span class="pill" style="background:rgba(255,255,255,.1);color:#fff">Microservicios + orquestador</span>
+      <svg width="54" height="14" viewBox="0 0 54 14"><path d="M0 7h48" stroke="#8fa3bf" stroke-width="2"/><path d="M44 2l8 5-8 5" fill="none" stroke="#8fa3bf" stroke-width="2"/></svg>
+      <span class="pill" style="background:#f7ead2;color:#7a4a08">Evaluación SOA vs EDA</span>
+      <svg width="54" height="14" viewBox="0 0 54 14"><path d="M0 7h48" stroke="#8fa3bf" stroke-width="2"/><path d="M44 2l8 5-8 5" fill="none" stroke="#8fa3bf" stroke-width="2"/></svg>
+      <span class="pill" style="background:#dcf0ec;color:#0b5a54">EDA · topología broker</span>
+    </div>
+  </div>
+  <div class="foot"><span>Grupo 4 · Análisis y Diseño de Sistemas</span><span>2026</span></div>
+</section>
+
+<!-- ============ 2. AGENDA ============ -->
+<section class="slide">
+  <div class="kicker"><b>Agenda</b></div>
+  <h2>Recorrido de la presentación</h2>
+  <div class="agenda">
+    <div class="step rise"><div class="num">01</div><h3>La aplicación</h3><p>Qué es InvestNow, a quién sirve y qué funcionalidades ofrece.</p></div>
+    <div class="step rise d1"><div class="num">02</div><h3>Arquitectura anterior</h3><p>Microservicios con orquestación sincrónica (UT4) y sus limitaciones.</p></div>
+    <div class="step rise d2" style="border-color:var(--amber)"><div class="num" style="color:var(--amber)">03</div><h3>SOA vs eventos</h3><p>Criterios de evaluación, la objeción del dinero y la decisión.</p></div>
+    <div class="step rise d3" style="border-color:var(--teal)"><div class="num" style="color:var(--teal)">04</div><h3>Diseño nuevo</h3><p>Componentes, flujo de la compra, falacias y compromisos.</p></div>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 3. QUÉ ES ============ -->
+<section class="slide">
+  <div class="kicker"><b>01 · La aplicación</b> Contexto de negocio</div>
+  <h2>InvestNow: una fintech de inversión para el pequeño inversor</h2>
+  <div class="body">
+    <svg class="diagram rise d1" viewBox="0 0 1136 330" role="img" aria-label="Usuario invierte a través de InvestNow en acciones, ETFs y criptomonedas">
+      <!-- usuario -->
+      <circle cx="110" cy="120" r="34" fill="#e3eaf3"/><circle cx="110" cy="108" r="12" fill="none" stroke="#1f3a5f" stroke-width="2.2"/>
+      <path d="M88 140c4-14 40-14 44 0" fill="none" stroke="#1f3a5f" stroke-width="2.2"/>
+      <text x="110" y="186" text-anchor="middle" font-weight="600" font-size="17">Inversor particular</text>
+      <text x="110" y="208" text-anchor="middle" font-size="14" fill="#7b8494">sin experiencia previa,</text>
+      <text x="110" y="226" text-anchor="middle" font-size="14" fill="#7b8494">capital pequeño o mediano</text>
+      <path d="M190 120 H372" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <text x="281" y="108" text-anchor="middle" font-size="14" fill="#4a5464">cuenta 100 % digital</text>
+      <!-- plataforma -->
+      <rect x="380" y="40" width="370" height="160" rx="18" fill="#1f3a5f"/>
+      <text x="565" y="98" text-anchor="middle" font-family="Source Serif 4, Georgia, serif" font-size="32" font-weight="700" fill="#fff">InvestNow</text>
+      <text x="565" y="128" text-anchor="middle" font-size="15" fill="#cbd6e4">plataforma digital de inversión</text>
+      <g font-size="13" font-weight="600">
+        <rect x="408" y="150" width="96" height="28" rx="14" fill="rgba(255,255,255,.14)"/><text x="456" y="169" text-anchor="middle" fill="#fff">simple</text>
+        <rect x="517" y="150" width="96" height="28" rx="14" fill="rgba(255,255,255,.14)"/><text x="565" y="169" text-anchor="middle" fill="#fff">rápida</text>
+        <rect x="626" y="150" width="96" height="28" rx="14" fill="rgba(255,255,255,.14)"/><text x="674" y="169" text-anchor="middle" fill="#fff">confiable</text>
+      </g>
+      <!-- mercados -->
+      <path d="M758 90 L880 50" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <path d="M758 120 L880 120" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <path d="M758 150 L880 190" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <g font-size="17" font-weight="600">
+        <rect x="890" y="26" width="200" height="48" rx="10" fill="#e8e4f4"/><text x="990" y="56" text-anchor="middle" fill="#5b4b9a">Acciones</text>
+        <rect x="890" y="96" width="200" height="48" rx="10" fill="#e8e4f4"/><text x="990" y="126" text-anchor="middle" fill="#5b4b9a">ETFs</text>
+        <rect x="890" y="166" width="200" height="48" rx="10" fill="#e8e4f4"/><text x="990" y="196" text-anchor="middle" fill="#5b4b9a">Criptomonedas</text>
+      </g>
+      <!-- requisitos críticos -->
+      <line x1="40" y1="262" x2="1096" y2="262" stroke="#ddd7ca"/>
+      <text x="40" y="300" font-size="15" font-weight="700" fill="#7b8494" letter-spacing="1.5">OPERA CON DINERO REAL →</text>
+      <g font-size="15" font-weight="600">
+        <rect x="290" y="278" width="190" height="34" rx="17" fill="#f7e2dc"/><text x="385" y="300" text-anchor="middle" fill="#b4432f">Disponibilidad</text>
+        <rect x="496" y="278" width="190" height="34" rx="17" fill="#e3eaf3"/><text x="591" y="300" text-anchor="middle" fill="#1f3a5f">Integridad del saldo</text>
+        <rect x="702" y="278" width="190" height="34" rx="17" fill="#e0f0e2"/><text x="797" y="300" text-anchor="middle" fill="#2f7a3d">Seguridad</text>
+        <rect x="908" y="278" width="190" height="34" rx="17" fill="#f7ead2"/><text x="1003" y="300" text-anchor="middle" fill="#a8670f">Auditabilidad</text>
+      </g>
+    </svg>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 4. FUNCIONALIDADES ============ -->
+<section class="slide">
+  <div class="kicker"><b>01 · La aplicación</b> Funcionalidades</div>
+  <h2>Cuatro capacidades de alto nivel</h2>
+  <div class="body">
+    <div class="grid g4">
+      <div class="card rise">
+        <div class="icon c-violet"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg></div>
+        <h3>Catálogo de activos</h3>
+        <p>Consulta de los activos operables y su estado (activo / inactivo).</p>
+        <div style="margin-top:12px"><span class="tag">GET /catalog</span></div>
+      </div>
+      <div class="card rise d1">
+        <div class="icon c-green"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg></div>
+        <h3>Billetera (Wallet)</h3>
+        <p>Saldo del usuario y débitos atómicos de cada operación.</p>
+        <div style="margin-top:12px"><span class="tag">GET /wallets</span></div>
+      </div>
+      <div class="card rise d2">
+        <div class="icon c-navy"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg></div>
+        <h3>Órdenes de compra</h3>
+        <p>Envío de una orden y seguimiento de su estado.</p>
+        <div style="margin-top:12px"><span class="tag">POST /orders</span><span class="tag">GET /orders</span></div>
+      </div>
+      <div class="card rise d3">
+        <div class="icon c-red"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <h3>Acceso seguro</h3>
+        <p>API Gateway único: autenticación JWT y autorización (Gatekeeper).</p>
+        <div style="margin-top:12px"><span class="tag">JWT</span><span class="tag">:8000</span></div>
+      </div>
+    </div>
+    <div class="rise d4" style="margin-top:30px;display:flex;align-items:center;gap:16px">
+      <span class="small" style="font-weight:600;letter-spacing:.08em;text-transform:uppercase">Ciclo de una orden</span>
+      <span class="pill c-amber">PENDING</span>
+      <svg width="40" height="12"><path d="M0 6h34" stroke="#9aa2ae" stroke-width="2" marker-end="url(#a-grey)"/></svg>
+      <span class="pill c-teal">COMPLETED</span><span class="small">o</span><span class="pill c-red">FAILED</span>
+      <span class="small" style="margin-left:auto">La orden es un proceso con estados: se acepta con <span class="mono">202 Accepted</span>.</span>
+    </div>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 5. ARQUITECTURA ANTERIOR ============ -->
+<section class="slide">
+  <div class="kicker"><b>02 · Arquitectura anterior</b> Estado en UT4</div>
+  <h2>Microservicios con orquestación sincrónica</h2>
+  <div class="body">
+    <svg class="diagram rise d1" viewBox="0 0 1136 470" role="img" aria-label="Diagrama de la arquitectura UT4">
+      <!-- cliente -->
+      <rect x="10" y="200" width="110" height="56" rx="10" fill="#fff" stroke="#ddd7ca"/>
+      <text x="65" y="233" text-anchor="middle" font-weight="600" font-size="16">Cliente</text>
+      <path d="M120 228 H170" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <!-- gateway -->
+      <rect x="176" y="180" width="160" height="96" rx="12" fill="#1f3a5f"/>
+      <text x="256" y="220" text-anchor="middle" font-weight="700" font-size="17" fill="#fff">API Gateway</text>
+      <text x="256" y="244" text-anchor="middle" font-size="13" fill="#cbd6e4">JWT · Gatekeeper</text>
+      <!-- gateway a servicios -->
+      <path d="M336 205 L392 95" stroke="#9aa2ae" stroke-width="2" marker-end="url(#a-grey)"/>
+      <path d="M336 228 H392" stroke="#9aa2ae" stroke-width="2" marker-end="url(#a-grey)"/>
+      <path d="M336 252 L392 355" stroke="#9aa2ae" stroke-width="2" marker-end="url(#a-grey)"/>
+      <!-- servicios -->
+      <rect x="398" y="58" width="190" height="72" rx="12" fill="#e3eaf3" stroke="#1f3a5f" stroke-width="1.5"/>
+      <text x="493" y="90" text-anchor="middle" font-weight="700" font-size="17" fill="#1f3a5f">Order Service</text>
+      <text x="493" y="112" text-anchor="middle" font-size="13" fill="#4a5464">recibe la orden</text>
+      <rect x="398" y="192" width="190" height="72" rx="12" fill="#e8e4f4" stroke="#5b4b9a" stroke-width="1.5"/>
+      <text x="493" y="224" text-anchor="middle" font-weight="700" font-size="17" fill="#5b4b9a">Catalog Service</text>
+      <text x="493" y="246" text-anchor="middle" font-size="13" fill="#4a5464">valida el activo</text>
+      <rect x="398" y="326" width="190" height="72" rx="12" fill="#e0f0e2" stroke="#2f7a3d" stroke-width="1.5"/>
+      <text x="493" y="358" text-anchor="middle" font-weight="700" font-size="17" fill="#2f7a3d">Wallet Service</text>
+      <text x="493" y="380" text-anchor="middle" font-size="13" fill="#4a5464">debita el saldo</text>
+      <!-- cola -->
+      <path d="M588 94 H650" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <rect x="656" y="66" width="190" height="56" rx="28" fill="#f7ead2" stroke="#a8670f" stroke-width="1.5"/>
+      <text x="751" y="91" text-anchor="middle" font-weight="700" font-size="15" fill="#a8670f">RabbitMQ</text>
+      <text x="751" y="110" text-anchor="middle" font-size="12.5" fill="#7a4a08">cola de trabajo · comando</text>
+      <path d="M846 94 H900" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <!-- worker -->
+      <rect x="906" y="52" width="210" height="84" rx="12" fill="#fff" stroke="#b4432f" stroke-width="2.5"/>
+      <text x="1011" y="86" text-anchor="middle" font-weight="700" font-size="17" fill="#b4432f">order_worker</text>
+      <text x="1011" y="110" text-anchor="middle" font-size="13" fill="#4a5464">orquestador central</text>
+      <!-- llamadas sincronas -->
+      <path d="M940 136 C 900 210, 700 228, 596 228" fill="none" stroke="#b4432f" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#a-red)"/>
+      <text x="770" y="206" text-anchor="middle" font-size="14" font-weight="600" fill="#b4432f">① HTTP · ¿activo válido?</text>
+      <path d="M990 136 C 960 330, 720 362, 596 362" fill="none" stroke="#b4432f" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#a-red)"/>
+      <text x="800" y="322" text-anchor="middle" font-size="14" font-weight="600" fill="#b4432f">② HTTP · debitar</text>
+      <!-- base compartida -->
+      <path d="M493 398 V424" stroke="#9aa2ae" stroke-width="1.6" stroke-dasharray="4 4"/>
+      <path d="M1100 136 V424" stroke="#9aa2ae" stroke-width="1.6" stroke-dasharray="4 4"/>
+      <rect x="398" y="424" width="718" height="40" rx="10" fill="#ebe9e3" stroke="#9aa2ae"/>
+      <text x="757" y="449" text-anchor="middle" font-weight="600" font-size="15" fill="#4a5464">PostgreSQL compartida · un único DATABASE_URL para todos los servicios</text>
+    </svg>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 6. LIMITACIONES ============ -->
+<section class="slide">
+  <div class="kicker"><b>02 · Arquitectura anterior</b> Limitaciones</div>
+  <h2>La cola no hacía al sistema “basado en eventos”</h2>
+  <p class="lead">El mensaje era un <strong>comando</strong> a un único consumidor, que luego seguía el flujo con llamadas sincrónicas.</p>
+  <div class="body">
+    <div class="small rise" style="font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px">Escenario: Wallet cae durante 60 s</div>
+    <svg class="diagram rise d1" viewBox="0 0 1136 120" role="img" aria-label="Línea de tiempo: tres reintentos fallidos y la orden queda FAILED">
+      <line x1="20" y1="60" x2="1110" y2="60" stroke="#ddd7ca" stroke-width="2"/>
+      <g font-size="14" font-weight="600">
+        <rect x="20" y="36" width="150" height="48" rx="10" fill="#e3eaf3"/><text x="95" y="65" text-anchor="middle" fill="#1f3a5f">orden aceptada</text>
+        <rect x="230" y="36" width="140" height="48" rx="10" fill="#f7e2dc"/><text x="300" y="65" text-anchor="middle" fill="#b4432f">intento 1 ✗</text>
+        <text x="410" y="52" text-anchor="middle" font-size="12" fill="#7b8494">espera 1 s</text>
+        <rect x="450" y="36" width="140" height="48" rx="10" fill="#f7e2dc"/><text x="520" y="65" text-anchor="middle" fill="#b4432f">intento 2 ✗</text>
+        <text x="630" y="52" text-anchor="middle" font-size="12" fill="#7b8494">espera 2 s</text>
+        <rect x="670" y="36" width="140" height="48" rx="10" fill="#f7e2dc"/><text x="740" y="65" text-anchor="middle" fill="#b4432f">intento 3 ✗</text>
+        <rect x="880" y="30" width="230" height="60" rx="10" fill="#b4432f"/><text x="995" y="58" text-anchor="middle" fill="#fff" font-size="17">FAILED a los ~3 s</text>
+        <text x="995" y="78" text-anchor="middle" fill="#f7e2dc" font-size="12">el usuario debe reenviarla</text>
+      </g>
+    </svg>
+    <div class="grid g3" style="margin-top:34px">
+      <div class="card rise d2"><div class="icon c-red"><svg viewBox="0 0 24 24"><circle cx="7" cy="12" r="3"/><circle cx="17" cy="12" r="3"/><path d="M10 12h4"/></svg></div>
+        <h3>Acoplamiento temporal</h3><p>La compra solo funciona si Order, Catalog <em>y</em> Wallet están disponibles al mismo tiempo.</p></div>
+      <div class="card rise d3"><div class="icon c-amber"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></svg></div>
+        <h3>Orquestador central</h3><p>Cada funcionalidad nueva obliga a modificar el <span class="mono">order_worker</span>.</p></div>
+      <div class="card rise d4"><div class="icon c-grey"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg></div>
+        <h3>Datos y publicación</h3><p>Base compartida entre servicios y doble escritura DB → cola sin atomicidad.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 7. LA OBJECIÓN ============ -->
+<section class="slide">
+  <div class="kicker"><b>03 · SOA vs eventos</b> Hipótesis inicial</div>
+  <h2>“Si se pierde un evento, se pierde la transacción”</h2>
+  <p class="lead">La objeción principal a EDA en un sistema financiero. Al contrastarla, encontramos que <strong>SOA no la elimina: la traslada</strong>.</p>
+  <div class="body">
+    <div class="grid g2" style="gap:28px">
+      <div class="card rise d1" style="padding:20px 22px 12px">
+        <div class="pill c-amber" style="margin-bottom:10px">SOA · llamada sincrónica</div>
+        <svg class="diagram" viewBox="0 0 520 260" role="img" aria-label="En SOA, el timeout tras debitar deja un estado ambiguo">
+          <rect x="20" y="10" width="140" height="40" rx="8" fill="#e3eaf3"/><text x="90" y="36" text-anchor="middle" font-weight="700" font-size="15" fill="#1f3a5f">Orders</text>
+          <rect x="360" y="10" width="140" height="40" rx="8" fill="#e0f0e2"/><text x="430" y="36" text-anchor="middle" font-weight="700" font-size="15" fill="#2f7a3d">Wallet</text>
+          <line x1="90" y1="50" x2="90" y2="250" stroke="#ddd7ca" stroke-width="2" stroke-dasharray="4 4"/>
+          <line x1="430" y1="50" x2="430" y2="250" stroke="#ddd7ca" stroke-width="2" stroke-dasharray="4 4"/>
+          <path d="M90 90 H424" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+          <text x="260" y="80" text-anchor="middle" font-size="14">debitar(orden 42)</text>
+          <rect x="400" y="110" width="60" height="30" rx="6" fill="#2f7a3d"/><text x="430" y="130" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">✓ $</text>
+          <path d="M430 170 H210" stroke="#b4432f" stroke-width="2" stroke-dasharray="6 5"/>
+          <text x="196" y="176" text-anchor="middle" font-size="22" font-weight="700" fill="#b4432f">✗</text>
+          <text x="320" y="162" text-anchor="middle" font-size="14" fill="#b4432f">respuesta perdida (timeout)</text>
+          <rect x="22" y="200" width="170" height="44" rx="8" fill="#f7e2dc"/><text x="107" y="228" text-anchor="middle" font-weight="700" font-size="15" fill="#b4432f">¿se cobró o no?</text>
+        </svg>
+      </div>
+      <div class="rise d2" style="display:flex;flex-direction:column;justify-content:center;gap:18px">
+        <div class="callout"><strong>Mismo problema, otro nombre.</strong> Resolver el estado ambiguo exige idempotencia, reintentos controlados y conciliación: los mismos mecanismos que en EDA.</div>
+        <div class="callout" style="border-color:var(--red)"><strong>Peor ante fallas.</strong> Si Wallet está caído, la llamada sincrónica falla; con una cola, la orden <em>espera</em>.</div>
+        <div class="callout" style="border-color:var(--teal)"><strong>Conclusión:</strong> perder un mensaje es un problema de <em>configuración</em>, no del estilo. No sirve para descartar EDA.</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Hipótesis contrastada con un asistente de IA (ver prompts del grupo)</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 8. MATRIZ ============ -->
+<section class="slide">
+  <div class="kicker"><b>03 · SOA vs eventos</b> Criterios de evaluación</div>
+  <h2>Cuatro preguntas para comparar los estilos</h2>
+  <div class="body">
+    <table class="matrix q rise d1">
+      <thead><tr><th>Pregunta</th><th style="color:var(--amber)">SOA</th><th style="color:var(--teal)">Eventos (EDA)</th><th>Mejor</th></tr></thead>
+      <tbody>
+        <tr><td class="crit">¿Qué pasa si Wallet se cae?</td>
+          <td class="v">La compra <strong>falla</strong>: cada paso espera la respuesta del siguiente.</td>
+          <td class="v">La orden <strong>espera</strong> en la cola y se completa cuando Wallet vuelve.</td>
+          <td><span class="pill c-teal">EDA</span></td></tr>
+        <tr><td class="crit">¿Cómo se agrega una funcionalidad? <span class="small">(p. ej. auditoría)</span></td>
+          <td class="v">Hay que <strong>modificar el orquestador</strong> que coordina el flujo.</td>
+          <td class="v">Se suma un servicio que <strong>escucha</strong> los eventos; el resto no cambia.</td>
+          <td><span class="pill c-teal">EDA</span></td></tr>
+        <tr><td class="crit">¿Qué tan fácil es seguir el flujo?</td>
+          <td class="v">Está en <strong>un solo lugar</strong> y el resultado se conoce al instante.</td>
+          <td class="v">Se reparte entre servicios; el resultado llega <strong>después</strong> (PENDING).</td>
+          <td><span class="pill c-amber">SOA</span></td></tr>
+        <tr class="tie"><td class="crit">¿Se puede perder una transacción?</td>
+          <td class="v">Sí, si se pierde la respuesta después de debitar.</td>
+          <td class="v">Sí, si se pierde un evento.</td>
+          <td><span class="pill c-grey">Empate</span></td></tr>
+      </tbody>
+    </table>
+    <div class="callout rise d2" style="margin-top:24px;border-color:var(--teal)"><strong>Conclusión:</strong> EDA gana en lo que más importa para InvestNow, la <strong>disponibilidad</strong>. La pérdida de transacciones no inclina la balanza: los dos estilos la resuelven con los mismos mecanismos.</div>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 10. DECISIÓN ============ -->
+<section class="slide">
+  <div class="kicker"><b>03 · SOA vs eventos</b> Decisión</div>
+  <h2>EDA para los comandos, REST sincrónico para las consultas</h2>
+  <div class="body">
+    <svg class="diagram rise d1" viewBox="0 0 1136 330" role="img" aria-label="Dos carriles: comandos por eventos y consultas por REST">
+      <!-- carril comandos -->
+      <rect x="0" y="10" width="1136" height="130" rx="14" fill="#dcf0ec"/>
+      <text x="28" y="48" font-size="13" font-weight="700" fill="#0f766e" letter-spacing="1.4">COMANDOS · CAMBIAN ESTADO</text>
+      <text x="28" y="80" font-family="Source Serif 4, Georgia, serif" font-size="26" font-weight="700" fill="#0b5a54">Comprar un activo</text>
+      <text x="28" y="108" font-size="15" fill="#2c615b">asincrónico por naturaleza</text>
+      <path d="M362 75 H420" stroke="#0f766e" stroke-width="2.5" marker-end="url(#a-teal)"/>
+      <rect x="428" y="44" width="260" height="62" rx="12" fill="#0f766e"/>
+      <text x="558" y="72" text-anchor="middle" font-weight="700" font-size="17" fill="#fff">Eventos de dominio</text>
+      <text x="558" y="94" text-anchor="middle" font-size="13" fill="#cdeae5">publish / subscribe · saga</text>
+      <path d="M688 75 H778" stroke="#0f766e" stroke-width="2.5" marker-end="url(#a-teal)"/>
+      <text x="800" y="70" font-size="15" fill="#0b5a54" font-weight="600">202 inmediato · tolera caídas</text>
+      <text x="800" y="94" font-size="15" fill="#0b5a54" font-weight="600">traza de auditoría</text>
+      <!-- carril consultas -->
+      <rect x="0" y="160" width="1136" height="130" rx="14" fill="#e3eaf3"/>
+      <text x="28" y="198" font-size="13" font-weight="700" fill="#1f3a5f" letter-spacing="1.4">CONSULTAS · SIN EFECTOS</text>
+      <text x="28" y="230" font-family="Source Serif 4, Georgia, serif" font-size="26" font-weight="700" fill="#1f3a5f">Catálogo, saldo, órdenes</text>
+      <text x="28" y="258" font-size="15" fill="#3d5677">respuesta inmediata</text>
+      <path d="M362 225 H420" stroke="#1f3a5f" stroke-width="2.5" marker-end="url(#a-navy)"/>
+      <rect x="428" y="194" width="260" height="62" rx="12" fill="#1f3a5f"/>
+      <text x="558" y="222" text-anchor="middle" font-weight="700" font-size="17" fill="#fff">REST vía Gateway</text>
+      <text x="558" y="244" text-anchor="middle" font-size="13" fill="#cbd6e4">solo datos locales (CQRS)</text>
+      <path d="M688 225 H778" stroke="#1f3a5f" stroke-width="2.5" marker-end="url(#a-navy)"/>
+      <text x="800" y="220" font-size="15" fill="#1f3a5f" font-weight="600">baja latencia</text>
+      <text x="800" y="244" font-size="15" fill="#1f3a5f" font-weight="600">ninguna lectura cruza servicios</text>
+      <!-- invariante -->
+      <text x="568" y="322" text-anchor="middle" font-size="16" fill="#4a5464">Invariante: <tspan font-weight="700" fill="#1c2430">cada movimiento de dinero es una transacción ACID local en Wallet</tspan></text>
+    </svg>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 11. COMPONENTES ============ -->
+<section class="slide">
+  <div class="kicker"><b>04 · Diseño nuevo</b> Componentes</div>
+  <h2>Arquitectura basada en eventos, topología broker</h2>
+  <div class="body">
+    <svg class="diagram rise d1" viewBox="0 0 1136 500" role="img" aria-label="Componentes de la nueva arquitectura alrededor del broker">
+      <!-- cliente + gateway -->
+      <rect x="190" y="8" width="120" height="50" rx="10" fill="#fff" stroke="#ddd7ca"/><text x="250" y="39" text-anchor="middle" font-weight="600" font-size="15">Cliente</text>
+      <path d="M310 33 H384" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <rect x="390" y="4" width="290" height="58" rx="12" fill="#1f3a5f"/>
+      <text x="535" y="30" text-anchor="middle" font-weight="700" font-size="17" fill="#fff">API Gateway</text>
+      <text x="535" y="50" text-anchor="middle" font-size="12.5" fill="#cbd6e4">JWT · Gatekeeper · único puerto expuesto</text>
+      <!-- REST -->
+      <g stroke="#9aa2ae" stroke-width="1.8" stroke-dasharray="6 5" fill="none">
+        <path d="M430 62 C 360 95, 200 95, 170 120" marker-end="url(#a-grey)"/>
+        <path d="M500 62 V120" marker-end="url(#a-grey)"/>
+        <path d="M640 62 C 700 95, 800 95, 830 120" marker-end="url(#a-grey)"/>
+      </g>
+      <text x="745" y="86" font-size="12.5" fill="#7b8494">REST · consultas</text>
+      <!-- servicios -->
+      <g>
+        <rect x="40" y="126" width="250" height="118" rx="14" fill="#e3eaf3" stroke="#1f3a5f" stroke-width="1.5"/>
+        <text x="165" y="158" text-anchor="middle" font-weight="700" font-size="18" fill="#1f3a5f">Order Service</text>
+        <text x="165" y="180" text-anchor="middle" font-size="13" fill="#4a5464">ciclo de vida de la orden</text>
+        <rect x="70" y="196" width="190" height="32" rx="8" fill="#fff"/><text x="165" y="217" text-anchor="middle" font-size="13" font-family="JetBrains Mono, monospace" fill="#1f3a5f">order_db + outbox</text>
+
+        <rect x="315" y="126" width="250" height="118" rx="14" fill="#e8e4f4" stroke="#5b4b9a" stroke-width="1.5"/>
+        <text x="440" y="158" text-anchor="middle" font-weight="700" font-size="18" fill="#5b4b9a">Catalog Service</text>
+        <text x="440" y="180" text-anchor="middle" font-size="13" fill="#4a5464">valida activos</text>
+        <rect x="345" y="196" width="190" height="32" rx="8" fill="#fff"/><text x="440" y="217" text-anchor="middle" font-size="13" font-family="JetBrains Mono, monospace" fill="#5b4b9a">Redis (cache)</text>
+
+        <rect x="590" y="126" width="250" height="118" rx="14" fill="#e0f0e2" stroke="#2f7a3d" stroke-width="1.5"/>
+        <text x="715" y="158" text-anchor="middle" font-weight="700" font-size="18" fill="#2f7a3d">Wallet Service</text>
+        <text x="715" y="180" text-anchor="middle" font-size="13" fill="#4a5464">débito atómico · consulta SOAP</text>
+        <rect x="620" y="196" width="190" height="32" rx="8" fill="#fff"/><text x="715" y="217" text-anchor="middle" font-size="13" font-family="JetBrains Mono, monospace" fill="#2f7a3d">wallet_db + outbox</text>
+
+        <rect x="865" y="126" width="250" height="118" rx="14" fill="#fff" stroke="#0f766e" stroke-width="2" stroke-dasharray="7 4"/>
+        <text x="990" y="158" text-anchor="middle" font-weight="700" font-size="18" fill="#0f766e">Audit Service</text>
+        <text x="990" y="180" text-anchor="middle" font-size="13" fill="#4a5464">nuevo · consumidor puro</text>
+        <rect x="895" y="196" width="190" height="32" rx="8" fill="#dcf0ec"/><text x="990" y="217" text-anchor="middle" font-size="13" font-family="JetBrains Mono, monospace" fill="#0f766e">audit_db</text>
+      </g>
+      <!-- publish / consume -->
+      <g stroke-width="2.2" fill="none">
+        <path d="M135 244 V322" stroke="#0f766e" marker-end="url(#a-teal)"/><path d="M195 322 V250" stroke="#a8670f" marker-end="url(#a-amber)"/>
+        <path d="M410 244 V322" stroke="#0f766e" marker-end="url(#a-teal)"/><path d="M470 322 V250" stroke="#a8670f" marker-end="url(#a-amber)"/>
+        <path d="M685 244 V322" stroke="#0f766e" marker-end="url(#a-teal)"/><path d="M745 322 V250" stroke="#a8670f" marker-end="url(#a-amber)"/>
+        <path d="M990 322 V250" stroke="#a8670f" marker-end="url(#a-amber)"/>
+      </g>
+      <!-- broker -->
+      <rect x="20" y="328" width="1096" height="112" rx="16" fill="#f7ead2" stroke="#a8670f" stroke-width="1.5"/>
+      <text x="44" y="358" font-size="13" font-weight="700" fill="#a8670f" letter-spacing="1.4">EVENT BROKER · RABBITMQ</text>
+      <text x="1092" y="358" text-anchor="end" font-size="14" fill="#7a4a08" font-family="JetBrains Mono, monospace">exchange investnow.events (topic)</text>
+      <g font-family="JetBrains Mono, monospace" font-size="13" fill="#7a4a08">
+        <rect x="75" y="378" width="180" height="44" rx="22" fill="#fff"/><text x="165" y="405" text-anchor="middle">order.events</text>
+        <rect x="350" y="378" width="180" height="44" rx="22" fill="#fff"/><text x="440" y="405" text-anchor="middle">catalog.events</text>
+        <rect x="625" y="378" width="180" height="44" rx="22" fill="#fff"/><text x="715" y="405" text-anchor="middle">wallet.events</text>
+        <rect x="900" y="378" width="180" height="44" rx="22" fill="#fff"/><text x="990" y="405" text-anchor="middle">audit.events</text>
+      </g>
+      <!-- leyenda -->
+      <g font-size="13.5" fill="#4a5464">
+        <line x1="22" y1="476" x2="52" y2="476" stroke="#0f766e" stroke-width="2.2" marker-end="url(#a-teal)"/><text x="62" y="481">publica eventos</text>
+        <line x1="200" y1="476" x2="230" y2="476" stroke="#a8670f" stroke-width="2.2" marker-end="url(#a-amber)"/><text x="240" y="481">consume de su cola (durable + retry + DLQ)</text>
+        <line x1="560" y1="476" x2="590" y2="476" stroke="#9aa2ae" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#a-grey)"/><text x="600" y="481">consulta sincrónica</text>
+        <text x="1114" y="481" text-anchor="end">Una base lógica por servicio · ninguno accede a la de otro</text>
+      </g>
+    </svg>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 12. SAGA ============ -->
+<section class="slide">
+  <div class="kicker"><b>04 · Diseño nuevo</b> Caso de uso: comprar un activo</div>
+  <h2>Cada servicio reacciona a un evento</h2>
+  <div class="body">
+    <svg class="diagram rise d1" viewBox="0 0 1136 420" role="img" aria-label="Flujo de eventos de la saga de compra">
+      <!-- cliente -->
+      <rect x="0" y="80" width="120" height="70" rx="12" fill="#fff" stroke="#ddd7ca"/>
+      <text x="60" y="112" text-anchor="middle" font-weight="600" font-size="15">Cliente</text>
+      <text x="60" y="132" text-anchor="middle" font-size="12" fill="#7b8494" font-family="JetBrains Mono, monospace">POST /orders</text>
+      <path d="M120 115 H176" stroke="#4a5464" stroke-width="2" marker-end="url(#a-ink)"/>
+      <!-- order -->
+      <rect x="182" y="70" width="180" height="90" rx="14" fill="#e3eaf3" stroke="#1f3a5f" stroke-width="1.5"/>
+      <text x="272" y="104" text-anchor="middle" font-weight="700" font-size="17" fill="#1f3a5f">Order</text>
+      <text x="272" y="126" text-anchor="middle" font-size="12.5" fill="#4a5464">orden + outbox</text>
+      <text x="272" y="144" text-anchor="middle" font-size="12.5" fill="#4a5464">en una transacción</text>
+      <!-- 202 -->
+      <path d="M220 160 C 200 210, 110 210, 70 156" fill="none" stroke="#9aa2ae" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#a-grey)"/>
+      <rect x="92" y="196" width="130" height="28" rx="14" fill="#fbe9c8"/><text x="157" y="215" text-anchor="middle" font-size="13" font-weight="700" fill="#a8670f">202 · PENDING</text>
+      <!-- OrderPlaced -->
+      <path d="M362 115 H492" stroke="#0f766e" stroke-width="2.5" marker-end="url(#a-teal)"/>
+      <text x="427" y="104" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f766e" font-family="JetBrains Mono, monospace">OrderPlaced</text>
+      <!-- catalog -->
+      <rect x="498" y="70" width="170" height="90" rx="14" fill="#e8e4f4" stroke="#5b4b9a" stroke-width="1.5"/>
+      <text x="583" y="108" text-anchor="middle" font-weight="700" font-size="17" fill="#5b4b9a">Catalog</text>
+      <text x="583" y="132" text-anchor="middle" font-size="12.5" fill="#4a5464">¿activo válido?</text>
+      <!-- AssetValidated -->
+      <path d="M668 115 H790" stroke="#0f766e" stroke-width="2.5" marker-end="url(#a-teal)"/>
+      <text x="729" y="104" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f766e" font-family="JetBrains Mono, monospace">AssetValidated</text>
+      <!-- wallet -->
+      <rect x="796" y="70" width="170" height="90" rx="14" fill="#e0f0e2" stroke="#2f7a3d" stroke-width="1.5"/>
+      <text x="881" y="104" text-anchor="middle" font-weight="700" font-size="17" fill="#2f7a3d">Wallet</text>
+      <text x="881" y="126" text-anchor="middle" font-size="12.5" fill="#4a5464">débito ACID</text>
+      <text x="881" y="144" text-anchor="middle" font-size="12.5" fill="#4a5464">idempotente</text>
+      <!-- COMPLETED -->
+      <path d="M966 100 C 1010 100, 1020 60, 1020 40" fill="none" stroke="#0f766e" stroke-width="2.5" marker-end="url(#a-teal)"/>
+      <text x="1000" y="82" text-anchor="start" font-size="13" font-weight="600" fill="#0f766e" font-family="JetBrains Mono, monospace" dx="10">FundsDebited</text>
+      <rect x="920" y="0" width="210" height="36" rx="18" fill="#0f766e"/><text x="1025" y="24" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Order → COMPLETED</text>
+      <!-- rechazos -->
+      <path d="M583 160 V292" stroke="#b4432f" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#a-red)"/>
+      <text x="593" y="236" font-size="13.5" font-weight="600" fill="#b4432f" font-family="JetBrains Mono, monospace">OrderRejected</text>
+      <text x="593" y="256" font-size="12" fill="#7b8494">inexistente / inactivo</text>
+      <path d="M881 160 V292" stroke="#b4432f" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#a-red)"/>
+      <text x="891" y="236" font-size="13.5" font-weight="600" fill="#b4432f" font-family="JetBrains Mono, monospace">FundsRejected</text>
+      <text x="891" y="256" font-size="12" fill="#7b8494">saldo insuficiente</text>
+      <rect x="498" y="298" width="468" height="40" rx="20" fill="#b4432f"/>
+      <text x="732" y="324" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Order → FAILED (compensación)</text>
+      <!-- audit -->
+      <rect x="0" y="368" width="1136" height="44" rx="12" fill="#fff" stroke="#0f766e" stroke-dasharray="6 4"/>
+      <text x="22" y="396" font-size="14" font-weight="700" fill="#0f766e">Audit Service</text>
+      <text x="140" y="396" font-size="14" fill="#4a5464">escucha <tspan font-family="JetBrains Mono, monospace">order.*</tspan> y <tspan font-family="JetBrains Mono, monospace">wallet.*</tspan> → traza inmutable de toda la saga, correlacionada por <tspan font-family="JetBrains Mono, monospace">correlation_id = order_id</tspan></text>
+    </svg>
+  </div>
+  <div class="foot"><span>Los eventos viajan siempre por el broker; se omiten en el dibujo por claridad</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 14. FALACIAS ============ -->
+<section class="slide">
+  <div class="kicker"><b>04 · Diseño nuevo</b> Falacias de la computación distribuida</div>
+  <h2>Cada falacia, un riesgo y sus patrones</h2>
+  <div class="body">
+    <div class="grid g3">
+      <div class="card rise d1" style="border-top:5px solid var(--red)">
+        <div class="small" style="font-weight:700;letter-spacing:.1em">FALACIA 1</div>
+        <h3>“La red es confiable”</h3>
+        <p><strong style="color:var(--red)">Riesgo:</strong> evento perdido u orden con doble débito.</p>
+        <div style="margin-top:14px"><span class="tag">Transactional Outbox</span><span class="tag">Retry + DLQ</span><span class="tag">Idempotencia</span><span class="tag">Queue-Based Load Leveling</span></div>
+      </div>
+      <div class="card rise d2" style="border-top:5px solid var(--amber)">
+        <div class="small" style="font-weight:700;letter-spacing:.1em">FALACIA 2</div>
+        <h3>“La latencia es cero”</h3>
+        <p><strong style="color:var(--amber)">Riesgo:</strong> el usuario espera mientras la saga cruza tres servicios.</p>
+        <div style="margin-top:14px"><span class="tag">Procesamiento asíncrono</span><span class="tag">CQRS</span><span class="tag">Cache-Aside</span></div>
+      </div>
+      <div class="card rise d3" style="border-top:5px solid var(--navy)">
+        <div class="small" style="font-weight:700;letter-spacing:.1em">FALACIA 3</div>
+        <h3>“La red es segura”</h3>
+        <p><strong style="color:var(--navy)">Riesgo:</strong> un <span class="mono">FundsDebited</span> forjado marca como pagada una orden no cobrada.</p>
+        <div style="margin-top:14px"><span class="tag">Gatekeeper</span><span class="tag">Sin puertos internos</span><span class="tag">Credenciales por servicio</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Richards &amp; Ford (2020), Fundamentals of Software Architecture</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 16. COMPROMISOS ============ -->
+<section class="slide">
+  <div class="kicker"><b>04 · Diseño nuevo</b> Compromisos asumidos</div>
+  <h2>Lo que ganamos y lo que cedemos</h2>
+  <div class="body">
+    <div class="grid g2" style="gap:40px">
+      <div class="rise d1">
+        <div class="pill c-teal" style="margin-bottom:18px">Ganamos</div>
+        <ul class="ticks plus">
+          <li>Tolerancia a fallas parciales</li>
+          <li>Extensibilidad sin tocar productores (Audit)</li>
+          <li>Escalado independiente por consumidor</li>
+          <li>Traza de auditoría natural</li>
+          <li>Aislamiento de datos por servicio</li>
+        </ul>
+      </div>
+      <div class="rise d2">
+        <div class="pill c-red" style="margin-bottom:18px">Cedemos</div>
+        <ul class="ticks minus">
+          <li>Consistencia inmediata: el usuario ve <span class="mono">PENDING</span></li>
+          <li>Simplicidad: outbox, idempotencia, DLQ</li>
+          <li>Flujo explícito: la coreografía es implícita</li>
+          <li>Latencia total de punta a punta</li>
+          <li>El broker pasa a ser infraestructura crítica</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout rise d3" style="margin-top:34px;border-color:var(--navy)">
+      <strong>Lo que no se negocia: la atomicidad del dinero.</strong>
+    </div>
+  </div>
+  <div class="foot"><span>InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+<!-- ============ 17. CIERRE ============ -->
+<section class="slide cover">
+  <div class="kicker"><b>Síntesis</b></div>
+  <div class="body">
+    <div class="grid g3 rise" style="gap:28px">
+      <div><div style="font:700 48px/1 var(--serif);color:#f7c97a">1</div><p style="font-size:20px;line-height:1.4;margin-top:12px;color:#e6ecf4">La orden de inversión es <strong style="color:#fff">asincrónica por naturaleza</strong>; EDA refleja mejor el dominio.</p></div>
+      <div><div style="font:700 48px/1 var(--serif);color:#f7c97a">2</div><p style="font-size:20px;line-height:1.4;margin-top:12px;color:#e6ecf4">Perder eventos <strong style="color:#fff">no es un argumento a favor de SOA</strong>: se resuelve por diseño en ambos estilos.</p></div>
+      <div><div style="font:700 48px/1 var(--serif);color:#f7c97a">3</div><p style="font-size:20px;line-height:1.4;margin-top:12px;color:#e6ecf4">Ganamos <strong style="color:#fff">disponibilidad y extensibilidad</strong> a cambio de consistencia eventual.</p></div>
+    </div>
+    <h1 class="rise d2" style="margin-top:80px;font-size:60px">¿Preguntas?</h1>
+  </div>
+  <div class="foot"><span>Grupo 4 · InvestNow · UT5</span><span class="pg"></span></div>
+</section>
+
+</div></div>
+
+<div id="progress"></div>
+<div id="hud">
+  <button id="prev" aria-label="Diapositiva anterior">‹</button>
+  <span id="count"></span>
+  <button id="next" aria-label="Diapositiva siguiente">›</button>
+  <button id="fs" aria-label="Pantalla completa" title="Pantalla completa (F)">⛶</button>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var deck = document.getElementById('deck');
+  var n = slides.length, i = 0;
+  slides.forEach(function(s, k){
+    var pg = s.querySelector('.pg'); if (pg) pg.textContent = (k+1) + ' / ' + n;
+  });
+  function fit(){
+    var s = Math.min(window.innerWidth/1280, window.innerHeight/720);
+    deck.style.transform = 'scale(' + s + ')';
+  }
+  function go(k){
+    i = Math.max(0, Math.min(n-1, k));
+    slides.forEach(function(s, j){ s.classList.toggle('active', j === i); });
+    document.getElementById('count').textContent = (i+1) + ' / ' + n;
+    document.getElementById('progress').style.width = ((i+1)/n*100) + '%';
+    if (location.hash !== '#' + (i+1)) history.replaceState(null, '', '#' + (i+1));
+  }
+  document.addEventListener('keydown', function(e){
+    if (['ArrowRight','ArrowDown','PageDown',' ','Enter'].indexOf(e.key) >= 0){ e.preventDefault(); go(i+1); }
+    else if (['ArrowLeft','ArrowUp','PageUp','Backspace'].indexOf(e.key) >= 0){ e.preventDefault(); go(i-1); }
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(n-1);
+    else if (e.key === 'f' || e.key === 'F') toggleFs();
+  });
+  function toggleFs(){
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+    else document.exitFullscreen && document.exitFullscreen();
+  }
+  document.getElementById('prev').onclick = function(){ go(i-1); };
+  document.getElementById('next').onclick = function(){ go(i+1); };
+  document.getElementById('fs').onclick = toggleFs;
+  var x0 = null;
+  document.addEventListener('touchstart', function(e){ x0 = e.touches[0].clientX; }, {passive:true});
+  document.addEventListener('touchend', function(e){
+    if (x0 === null) return; var dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 50) go(i + (dx < 0 ? 1 : -1)); x0 = null;
+  });
+  var hud=document.getElementById('hud'), t;
+  document.addEventListener('mousemove', function(){ hud.classList.add('show'); clearTimeout(t); t=setTimeout(function(){hud.classList.remove('show');},2000); });
+  window.addEventListener('resize', fit);
+  fit();
+  var h = parseInt(location.hash.slice(1), 10);
+  go(isNaN(h) ? 0 : h-1);
+})();
+</script>
+</body>
+</html>
