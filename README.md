@@ -45,20 +45,45 @@ UT5 crea sus propios volúmenes para Postgres y RabbitMQ. Si ya tenías una
 demo de UT4, sus datos quedan en los volúmenes anteriores. Para comparar
 con UT4, el plan toma el commit `7373fdf` como punto de partida.
 
-Compose ya no levanta el worker de UT4. Mientras se integra la compra por
-eventos, `POST /api/v1/orders` devuelve `503`. Podés probar Catálogo y
-Audit con el ejemplo de abajo.
+Compose ya no levanta el worker de UT4. `POST /api/v1/orders` guarda la
+orden y el evento `OrderPlaced` en una misma transacción; luego Catalog y
+Wallet procesan la compra de forma asíncrona. El `GET /api/v1/orders`
+muestra `PENDING` hasta que llega el resultado de la saga.
 
-## Cómo probar Catálogo y Audit
+Para ejecutar los experimentos de disponibilidad P1-P4 (incluyen períodos
+de caída de servicios y crean órdenes de demo), corré
+`bash scripts/demo_ut5_disponibilidad.sh` con el stack levantado. La prueba
+consume saldo de la billetera de demo.
 
-Catálogo escucha `OrderPlaced`. Si el activo está habilitado, publica
-`AssetValidated`. Si está inactivo o no existe, publica `OrderRejected`.
-Audit guarda tanto el evento de entrada como el resultado y registra una
-sola fila por ID de evento.
+## Cómo probar la compra y Audit
 
-Con el stack levantado, publicá una orden de ejemplo para un activo
-inexistente. El comando manda el evento directo a RabbitMQ para probar esta
-parte del flujo sin crear una compra por la API.
+Obtené un token con el login de demo y enviá una compra al Gateway:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"inversor1","password":"password123"}' |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+AUTH_SCHEME="Bea"
+AUTH_HEADER="$AUTH_SCHEME""rer $TOKEN"
+
+curl -i -X POST http://localhost:8000/api/v1/orders \
+  -H "Authorization: $AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -d '{"asset_id":1,"quantity":1,"total_price":150.0}'
+```
+
+La respuesta es `202 Accepted` con el `order_id`. Consultá luego
+`GET /api/v1/orders` con el mismo token para ver el estado eventual
+(`COMPLETED` o `FAILED`).
+
+Catalog escucha `OrderPlaced`. Si el activo está habilitado, publica
+`AssetValidated`; si está inactivo o no existe, publica `OrderRejected`.
+Wallet debita y publica el resultado, y Audit guarda los eventos con una
+fila por ID de evento.
+
+También se puede probar el rechazo del catálogo publicando un evento para
+un activo inexistente, sin efectuar una compra por la API:
 
 ```bash
 ORDER_ID=$(date +%s)

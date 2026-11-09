@@ -135,11 +135,11 @@ Catalog, Audit y `README.md`.
 
 | # | Tarea |
 |---|---|
-| 2.1 | **Línea base UT4**: correr las pruebas P1 a P3 (`ENTREGA.md` 5.3) sobre el commit `7373fdf`. No depende de nada: se puede hacer desde el día 1 |
-| 2.2 | `POST /orders`: guardar la orden y `OrderPlaced` en el outbox en una misma transacción. Levantar el relay |
-| 2.3 | Consumidor de `order.events` que actualiza el estado de la orden (deduplicando con `mark_processed`) |
-| 2.4 | Eliminar `order_worker`, `order_processing.py` y `order_messaging.py` |
-| 2.5 | `scripts/demo_ut5_disponibilidad.sh` con las pruebas P1 a P4 |
+| 2.1 | **Pendiente**: correr la línea base UT4 (pruebas P1 a P3, `ENTREGA.md` 5.3) sobre el commit `7373fdf`. |
+| 2.2 | ✅ Implementado y validado en Docker: `POST /orders` guarda la orden y `OrderPlaced` en el outbox en una misma transacción; el relay publica el evento. |
+| 2.3 | ✅ Consumidor de `order.events` validado: procesa `OrderRejected` y marca la orden `FAILED` con deduplicación. El resultado `FundsDebited` queda pendiente de la integración de Wallet (Línea 3). |
+| 2.4 | ✅ Retirados `order_worker`, `order_processing.py` y `order_messaging.py`. |
+| 2.5 | Script `scripts/demo_ut5_disponibilidad.sh` creado; **pendiente ejecutar P1 a P4**. Bloqueado hasta que Wallet consuma `wallet.events` (Línea 3). |
 
 ## Línea 3 — Wallet Service y SOAP
 
