@@ -4,6 +4,8 @@ from typing import Any
 
 import psycopg2
 
+from app.events import Event, contract, mark_processed, save_to_outbox
+
 ORDER_STATUSES = {"PENDING", "COMPLETED", "FAILED"}
 
 
@@ -62,30 +64,55 @@ def create_order(order: dict[str, Any]) -> int:
                 row = cursor.fetchone()
                 if row is None:
                     raise RuntimeError("PostgreSQL did not return the new order ID")
-                return int(row[0])
+                order_id = int(row[0])
+                event = Event.new(
+                    contract.ORDER_PLACED,
+                    correlation_id=order_id,
+                    payload={
+                        "order_id": order_id,
+                        "user_id": int(order["user_id"]),
+                        "asset_id": order["asset_id"],
+                        "quantity": order["quantity"],
+                        "total_price": order["total_price"],
+                    },
+                )
+                save_to_outbox(cursor, event)
+                return order_id
 
 
-def update_order_status(
+def apply_order_result(
     order_id: int,
     status: str,
-    error_message: str | None = None,
-) -> None:
-    if status not in ORDER_STATUSES:
-        raise ValueError(f"Unsupported order status: {status}")
+    error_message: str | None,
+    event_id: str,
+) -> bool:
+    if status not in ORDER_STATUSES - {"PENDING"}:
+        raise ValueError(f"Unsupported result status: {status}")
 
     with closing(_connect()) as connection:
         with connection:
             with connection.cursor() as cursor:
+                if not mark_processed(cursor, "order", event_id):
+                    return False
+
                 cursor.execute(
                     """
                     UPDATE orders
                     SET status = %s, error_message = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE order_id = %s
+                    WHERE order_id = %s AND status = 'PENDING'
                     """,
                     (status, error_message, order_id),
                 )
-                if cursor.rowcount != 1:
+                if cursor.rowcount == 1:
+                    return True
+
+                cursor.execute(
+                    "SELECT status FROM orders WHERE order_id = %s",
+                    (order_id,),
+                )
+                if cursor.fetchone() is None:
                     raise LookupError(f"Order {order_id} does not exist")
+                return False
 
 
 def get_orders_for_user(user_id: int) -> list[dict[str, Any]]:

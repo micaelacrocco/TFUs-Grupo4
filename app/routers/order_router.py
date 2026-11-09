@@ -1,18 +1,12 @@
-import logging
-import pika
-
 from fastapi import APIRouter, HTTPException, Header, status
 
-from app.order_messaging import RABBITMQ_URL, publish_order
 from app.order_models import OrderRequest
 from app.order_store import (
     create_order as create_order_record,
     get_orders_for_user,
-    update_order_status,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["Order Service"])
-logger = logging.getLogger(__name__)
 
 
 @router.post("/orders", status_code=status.HTTP_202_ACCEPTED)
@@ -20,32 +14,11 @@ def create_order(
     order: OrderRequest,
     x_user_id: str = Header(...)
 ):
-    """Valida la orden, la persiste como pendiente y la publica en RabbitMQ."""
-    if not RABBITMQ_URL:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="La compra por eventos todavía no está integrada.",
-        )
-
+    """Persiste la orden y su evento en una única transacción (Outbox)."""
     order_data = order.model_dump()
-    order_data["user_id"] = x_user_id
+    order_data["user_id"] = int(x_user_id)
 
     order_id = create_order_record(order_data)
-    try:
-        message = {
-            "order_id": order_id,
-            "user_id": x_user_id,
-            "order": order.model_dump(),
-        }
-        publish_order(message)
-    except (pika.exceptions.AMQPError, OSError, RuntimeError) as exc:
-        logger.exception("Could not publish order %s to RabbitMQ", order_id)
-        update_order_status(order_id, "FAILED", "Could not enqueue order")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Order could not be queued",
-        ) from exc
-
     return {"order_id": order_id, "status": "PENDING"}
 
 @router.get("/orders")

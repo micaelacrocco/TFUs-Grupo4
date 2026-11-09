@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-import httpx
 from fastapi import FastAPI
 import pika
 import psycopg2
@@ -16,7 +15,15 @@ import psycopg2
 from app.aspects.logging_aspect import add_logging_aspect
 from app.config.loader import build_config, load_raw_config
 from app.config.validator import validate
-from app.events import broker
+from app.events import (
+    broker,
+    contract,
+    ensure_inbox_schema,
+    ensure_outbox_schema,
+    start_consumer,
+    start_outbox_relay,
+)
+from app.order_events import handle_order_event
 from app.order_store import initialize_order_schema
 from app.routers import order_router  # Router específico de gestión de órdenes
 from app.routers.health_router import build_health_router
@@ -36,6 +43,13 @@ config = build_config(raw_config)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     initialize_order_schema()
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL must be configured for Order Service")
+    ensure_outbox_schema(database_url)
+    ensure_inbox_schema(database_url)
+    start_outbox_relay(database_url)
+    start_consumer(contract.QUEUE_ORDER, handle_order_event)
     yield
 
 
@@ -50,19 +64,8 @@ app.include_router(order_router.router)
 
 
 def check_dependencies() -> dict:
-    """Health Endpoint Monitoring (UT4): Order depende de Catalog y de
-    Wallet, PostgreSQL y RabbitMQ. Expone el estado inmediato de cada una;
-    no usa retry para no enmascarar una dependencia degradada."""
+    """Order depende directamente de su base de datos y del broker de eventos."""
     results = {}
-    for name, url in (
-        ("catalog", os.getenv("CATALOG_SERVICE_URL", "http://catalog_service:8000")),
-        ("wallet", os.getenv("WALLET_SERVICE_URL", "http://wallet_service:8000")),
-    ):
-        try:
-            response = httpx.get(f"{url}/health", timeout=2.0)
-            results[name] = {"status": "ok" if response.status_code == 200 else "down"}
-        except httpx.RequestError as exc:
-            results[name] = {"status": "down", "detail": str(exc)}
     try:
         connection = broker.connect()
         connection.close()

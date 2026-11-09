@@ -135,11 +135,11 @@ Catalog, Audit y `README.md`.
 
 | # | Tarea |
 |---|---|
-| 2.1 | **Línea base UT4**: correr las pruebas P1 a P3 (`ENTREGA.md` 5.3) sobre el commit `7373fdf`. No depende de nada: se puede hacer desde el día 1 |
-| 2.2 | `POST /orders`: guardar la orden y `OrderPlaced` en el outbox en una misma transacción. Levantar el relay |
-| 2.3 | Consumidor de `order.events` que actualiza el estado de la orden (deduplicando con `mark_processed`) |
-| 2.4 | Eliminar `order_worker`, `order_processing.py` y `order_messaging.py` |
-| 2.5 | `scripts/demo_ut5_disponibilidad.sh` con las pruebas P1 a P4 |
+| 2.1 | ✅ Línea base UT4 ejecutada en `7373fdf`: P1 y P3 aceptaron 50/50 órdenes; 48 terminaron `COMPLETED` y 2 `FAILED` en cada prueba. P2 repitió un mensaje de orden y mantuvo una única transacción y el mismo saldo. |
+| 2.2 | ✅ Implementado y validado en Docker: `POST /orders` guarda la orden y `OrderPlaced` en el outbox en una misma transacción; el relay publica el evento. |
+| 2.3 | ✅ Validado de punta a punta con Wallet: Order consume `OrderRejected`, `FundsRejected` y `FundsDebited`, actualizando el estado con deduplicación `mark_processed`. |
+| 2.4 | ✅ Retirados `order_worker`, `order_processing.py` y `order_messaging.py`. |
+| 2.5 | ✅ `scripts/demo_ut5_disponibilidad.sh`: P1/P2 completó 50/50 órdenes y registró 50 débitos únicos tras forzar una reentrega; P3 completó 50/50; P4 envió el evento malformado a la DLQ y comprobó que Catalog siguió procesando. |
 
 ## Línea 3 — Wallet Service y SOAP
 
@@ -147,21 +147,18 @@ Catalog, Audit y `README.md`.
 
 | # | Tarea |
 |---|---|
-| 3.1 | Migrar `GET /wallets` a SOAP: mensajes XML y contrato **WSDL**. No depende de la librería: se puede hacer desde el día 1 |
-| 3.2 | El Gateway consume el servicio SOAP y lo expone al cliente |
-| 3.3 | Script de demo SOAP: obtener el WSDL, hacer una llamada directa y otra a través del Gateway |
-| 3.4 | Consumidor de `wallet.events`: debita de forma idempotente por `order_id` y guarda `FundsDebited` o `FundsRejected` en el outbox, en la misma transacción. Levantar el relay |
+| 3.1 | ✅ `GET /wallets` migrado a SOAP con XML y contrato WSDL; llamada directa validada desde Order Service. |
+| 3.2 | ✅ Gateway consume y expone SOAP; llamada validada con autenticación. |
+| 3.3 | ✅ Demo SOAP ejecutada: WSDL y llamada directa y vía Gateway respondieron HTTP 200. |
+| 3.4 | ✅ Wallet consume `wallet.events`, debita idempotentemente por `order_id` y guarda `FundsDebited`/`FundsRejected` en el outbox transaccional. |
 
 ---
 
 ## Integración y cierre (todo el grupo)
 
-1. **Integración:** compra de punta a punta (2.3 de `ENTREGA.md`) con
-   `docker compose up --build` desde cero.
-2. **Pruebas:** correr `demo_ut5_disponibilidad.sh` y compararlo con la
-   línea base de 2.1.
-3. **Resultados:** volcar la comparación en `ENTREGA.md`. Si la mejora no
-   se verifica, explicar por qué.
+1. **Integración:** ✅ compra de punta a punta validada con Docker; orden exitosa `COMPLETED`, rechazo por activo inactivo y por fondos insuficientes `FAILED`.
+2. **Pruebas:** ✅ demo P1-P4 ejecutada y comparada con la línea base UT4.
+3. **Resultados:** ✅ comparación documentada en `ENTREGA.md` §5.3.
 4. **Uso de IA:** cada integrante aporta sus prompts. Entre todos se
    escribe el análisis crítico (una página como máximo).
 5. **Ensayo:** cada integrante tiene que poder explicar las tres líneas.
