@@ -575,31 +575,41 @@ total hasta que la orden queda `COMPLETED` durante una caída (consistencia
 eventual). Se acepta porque es preferible una orden demorada a una orden
 perdida.
 
-#### 5.3 Cómo se evaluará en la Parte 2
+#### 5.3 Experimentos y resultados
 
-Se ejecutarán los mismos experimentos sobre la arquitectura de UT4
-(commit `7373fdf`) y sobre la nueva, con un script
-`scripts/demo_ut5_disponibilidad.sh` reproducible con Docker Compose.
+Se ejecutaron los experimentos sobre la arquitectura UT4 (commit
+`7373fdf`) y sobre UT5 con `scripts/demo_ut5_disponibilidad.sh`. Cada
+prueba de caída aceptó 50 órdenes, una por segundo; el servicio se detuvo
+después de las primeras 10 y se recuperó tras 60 segundos. La línea base
+se ejecutó en un volumen Compose aislado. P2 de UT4 reenvió el mismo
+comando de orden para comprobar la clave idempotente `order:{order_id}`;
+P2 de UT5 terminó el consumidor Wallet durante una entrega sin ack y
+verificó la reentrega.
 
 | # | Prueba | Procedimiento | Métricas |
 |---|---|---|---|
 | P1 | **Caída de Wallet** | Enviar 50 órdenes válidas (1 por segundo). A los 10 s, `docker compose stop wallet_service`. A los 70 s, `start`. Esperar a que se vacíen las colas | % de `202` aceptadas, % `COMPLETED` y `FAILED` finales, órdenes perdidas (aceptadas sin estado final), tiempo hasta drenar la cola |
-| P2 | **Reentrega e idempotencia** | Durante P1, matar Wallet (`kill`) mientras procesa, para forzar reentregas | Débitos duplicados (filas en `wallet_transactions` por `order_id` > 1), saldo final = saldo inicial − Σ órdenes completadas |
+| P2 | **Reentrega e idempotencia** | UT4: reenviar el mismo comando de orden. UT5: matar Wallet mientras tiene una entrega sin ack y verificar su reentrega | Filas en `wallet_transactions` por `order_id` y saldo final = saldo inicial − Σ órdenes completadas |
 | P3 | **Caída de Catalog** | Igual que P1, pero deteniendo `catalog_service` | Mismas métricas que P1 |
 | P4 | **Mensaje irrecuperable** | Publicar un evento malformado | El mensaje va directo a la DLQ y el consumidor sigue procesando otros eventos |
 
-**Resultados esperados**
+**Resultados medidos**
 
-| Métrica (P1) | UT4 (microservicios) | UT5 (EDA) |
+| Prueba / métrica | UT4 (`7373fdf`) | UT5 |
 |---|---|---|
-| Órdenes aceptadas | ~100 % | 100 % |
-| Órdenes `COMPLETED` al final | Solo las procesadas antes de la caída (~20 %, 10 de 50) | 100 % |
-| Órdenes perdidas | 0, pero las fallidas deben reenviarse a mano | 0 |
-| Débitos duplicados | 0 | 0 |
-| Tiempo hasta estado final durante la caída | ~3 s (falla rápido) | Hasta la recuperación de Wallet (~60 s) |
+| P1 — Wallet: órdenes aceptadas | 50/50 (100 %) | 50/50 (100 %) |
+| P1 — Wallet: estado final | 48 `COMPLETED`, 2 `FAILED`, 0 pendientes/perdidas | 50 `COMPLETED`, 0 `FAILED`, 0 pendientes/perdidas |
+| P1 — Wallet: débitos/transacciones | 48 | 50, una por orden |
+| P1 — drenaje después de recuperar Wallet | 6,4 s | 44 s, incluyendo la espera de 45 s usada para forzar la reentrega |
+| P2 — idempotencia | Reenvío del mismo comando: 1 fila en `wallet_transactions`; el saldo permaneció en 9951,00 | Wallet se terminó con una entrega sin ack; 50 órdenes completadas y 50 transacciones únicas |
+| P3 — Catalog: órdenes aceptadas | 50/50 (100 %) | 50/50 (100 %) |
+| P3 — Catalog: estado final | 48 `COMPLETED`, 2 `FAILED`, 0 pendientes/perdidas | 50 `COMPLETED`, 0 `FAILED`, 0 pendientes/perdidas |
+| P3 — drenaje después de recuperar Catalog | 4,3 s | 3 s |
+| P4 — evento malformado | No aplica: UT4 no usa eventos ni DLQ | La DLQ de Catalog aumentó en 1 y el consumidor procesó el siguiente evento válido |
 
-Los resultados se documentarán con la salida del script, el estado final
-de las tablas `orders` y `wallet_transactions`, y el estado de las colas
-y DLQ consultado desde el contenedor de RabbitMQ. Si la mejora no se verifica, se
-analizará la causa: por ejemplo, el prefetch del consumidor o las órdenes
-que vencen en la DLQ.
+En UT5, las dos pruebas de caída conservaron el 100 % de las órdenes y
+las completaron tras recuperar el servicio; no hubo débitos duplicados.
+La latencia adicional es intencional: se prefiere demorar el procesamiento
+a marcar la orden como fallida. El drenaje P1 incluye la pausa de base de
+datos usada para interrumpir Wallet con una entrega en curso y verificar
+el reenvío del mensaje.

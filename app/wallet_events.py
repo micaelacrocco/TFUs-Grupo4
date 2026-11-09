@@ -1,77 +1,135 @@
-# app/wallet_events.py
+"""Manejo idempotente de órdenes validadas por Catalog."""
 
 import os
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 import psycopg2
-from app.events import Event, contract, mark_processed, save_to_outbox, PermanentError
+
+from app.events import (
+    Event,
+    PermanentError,
+    contract,
+    mark_processed,
+    save_to_outbox,
+)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+ORDER_AMOUNT = Decimal("0.01")
+
 
 def get_connection():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL must be configured for Wallet Service")
     return psycopg2.connect(DATABASE_URL)
 
+
+def _positive_integer(value: object, field: str) -> int:
+    if type(value) is not int or value <= 0:
+        raise PermanentError(f"{field} debe ser un entero positivo")
+    return value
+
+
+def _order_total(value: object) -> Decimal:
+    try:
+        total = Decimal(str(value))
+        total = total.quantize(ORDER_AMOUNT, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        raise PermanentError("total_price debe ser un monto válido") from None
+    if not total.is_finite() or total <= 0:
+        raise PermanentError("total_price debe ser un monto positivo y finito")
+    if total <= 0:
+        raise PermanentError("total_price debe ser al menos 0.01")
+    return total
+
+
 def handle_wallet_event(event: Event) -> None:
-    """Manejador del consumidor para la cola wallet.events.
-    Procesa AssetValidated de forma idempotente y transaccional.
-    """
     if event.event_type != contract.ASSET_VALIDATED:
-        return
+        raise PermanentError(f"Wallet no consume {event.event_type}")
 
     payload = event.payload
-    user_id = payload["user_id"]
-    order_id = payload["order_id"]
-    total_price = float(payload["total_price"])
+    user_id = _positive_integer(payload.get("user_id"), "user_id")
+    order_id = _positive_integer(payload.get("order_id"), "order_id")
+    total_price = _order_total(payload.get("total_price"))
+    transaction_id = f"order:{order_id}"
 
-    conn = get_connection()
+    connection = get_connection()
     try:
-        with conn:
-            with conn.cursor() as cur:
-                # 1. Idempotencia: si este event_id ya se procesó, salimos
-                if not mark_processed(cur, "wallet", event.event_id):
+        with connection:
+            with connection.cursor() as cursor:
+                if not mark_processed(cursor, "wallet", event.event_id):
                     return
 
-                # 2. Lock de fila para asegurar consistencia ACID (igual que en tus transacciones REST)
-                cur.execute("SELECT balance FROM wallets WHERE user_id = %s FOR UPDATE", (user_id,))
-                row = cur.fetchone()
-
-                if row is None:
-                    # Error permanente: la wallet no existe -> va directo a DLQ sin reintentos
+                cursor.execute(
+                    "SELECT balance FROM wallets WHERE user_id = %s FOR UPDATE",
+                    (user_id,),
+                )
+                wallet = cursor.fetchone()
+                if wallet is None:
                     raise PermanentError(f"Wallet not found for user_id {user_id}")
 
-                current_balance = float(row[0])
+                cursor.execute(
+                    """
+                    SELECT user_id, amount, previous_balance, new_balance
+                    FROM wallet_transactions
+                    WHERE transaction_id = %s
+                    """,
+                    (transaction_id,),
+                )
+                existing = cursor.fetchone()
+                debit = -total_price
+                if existing is not None:
+                    if (
+                        existing[0] != user_id
+                        or Decimal(existing[1]) != debit
+                    ):
+                        raise PermanentError(
+                            f"Order {order_id} was already processed with different data"
+                        )
+                    return
 
-                # 3. Regla de negocio: ¿alcanzan los fondos?
-                if current_balance >= total_price:
-                    new_balance = current_balance - total_price
-
-                    # Actualizar saldo en la BD
-                    cur.execute(
-                        "UPDATE wallets SET balance = %s WHERE user_id = %s",
-                        (new_balance, user_id)
-                    )
-
-                    # Publicar éxito al outbox (misma transacción)
-                    outbox_event = Event.new(
-                        contract.FUNDS_DEBITED,
-                        correlation_id=str(order_id),
-                        payload={
-                            "order_id": order_id,
-                            "user_id": user_id,
-                            "amount": total_price,
-                            "new_balance": new_balance,
-                        }
-                    )
-                    save_to_outbox(cur, outbox_event)
-                else:
-                    # Rechazo de negocio (fondos insuficientes) -> no es error técnico
-                    outbox_event = Event.new(
+                previous_balance = Decimal(wallet[0])
+                if previous_balance < total_price:
+                    result = Event.new(
                         contract.FUNDS_REJECTED,
-                        correlation_id=str(order_id),
+                        correlation_id=order_id,
                         payload={
                             "order_id": order_id,
                             "user_id": user_id,
                             "reason": "Insufficient funds",
-                        }
+                        },
                     )
-                    save_to_outbox(cur, outbox_event)
+                else:
+                    new_balance = previous_balance - total_price
+                    cursor.execute(
+                        "UPDATE wallets SET balance = %s WHERE user_id = %s",
+                        (new_balance, user_id),
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO wallet_transactions (
+                            transaction_id, user_id, amount, previous_balance, new_balance
+                        )
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (
+                            transaction_id,
+                            user_id,
+                            debit,
+                            previous_balance,
+                            new_balance,
+                        ),
+                    )
+                    result = Event.new(
+                        contract.FUNDS_DEBITED,
+                        correlation_id=order_id,
+                        payload={
+                            "order_id": order_id,
+                            "user_id": user_id,
+                            "amount": float(total_price),
+                            "new_balance": float(new_balance),
+                        },
+                    )
+
+                save_to_outbox(cursor, result)
     finally:
-        conn.close()
+        connection.close()

@@ -5,24 +5,36 @@ set -euo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8000}"
 ORDER_COUNT=50
+ORDER_PRICE=1.0
 service_to_restore=""
+if [ -n "${COMPOSE_ENV_FILE:-}" ]; then
+  compose_env_file=$COMPOSE_ENV_FILE
+elif [ -f .env ]; then
+  compose_env_file=.env
+else
+  compose_env_file=.env.example
+fi
+
+compose() {
+  docker compose --env-file "$compose_env_file" "$@"
+}
 
 restore_service() {
   if [ -n "$service_to_restore" ]; then
-    docker compose start "$service_to_restore" >/dev/null
+    compose start "$service_to_restore" >/dev/null
   fi
 }
 trap restore_service EXIT
 
 force_wallet_redelivery() {
   echo "Bloqueando brevemente el saldo de demo para provocar una entrega en curso."
-  docker compose exec -d postgres_db sh -c \
+  compose exec -d postgres_db sh -c \
     'PGPASSWORD="$WALLET_DB_PASSWORD" PGAPPNAME=ut5-wallet-redelivery-lock psql -h 127.0.0.1 -U wallet_app -d wallet_db -c "BEGIN; SELECT balance FROM wallets WHERE user_id = 1 FOR UPDATE; SELECT pg_sleep(45); COMMIT;"'
   sleep 1
-  docker compose start wallet_service
+  compose start wallet_service
   local unacknowledged=0
   for ((attempt=1; attempt<=100; attempt++)); do
-    unacknowledged=$(docker compose exec -T rabbitmq rabbitmqctl list_queues -q \
+    unacknowledged=$(compose exec -T rabbitmq rabbitmqctl list_queues -q \
       name messages_unacknowledged |
       awk '$1 == "wallet.events" {print $2}')
     if [ "${unacknowledged:-0}" -gt 0 ]; then
@@ -36,9 +48,10 @@ force_wallet_redelivery() {
   fi
 
   echo "Mensaje en curso detectado; terminando Wallet para forzar su reentrega."
-  docker compose kill wallet_service
-  docker compose start wallet_service
+  compose kill wallet_service
+  compose start wallet_service
   service_to_restore=""
+  recovery_started=$SECONDS
 }
 
 if ! curl -fsS "$GATEWAY_URL/health" >/dev/null; then
@@ -48,7 +61,7 @@ fi
 
 wallet_consumers=0
 for ((attempt=1; attempt<=30; attempt++)); do
-  wallet_consumers=$(docker compose exec -T rabbitmq rabbitmqctl list_queues -q \
+  wallet_consumers=$(compose exec -T rabbitmq rabbitmqctl list_queues -q \
     name consumers | awk '$1 == "wallet.events" {print $2}')
   if [ "${wallet_consumers:-0}" -gt 0 ]; then
     break
@@ -73,7 +86,7 @@ submit_order() {
   response=$(curl -fsS -w $'\n%{http_code}' -X POST "$GATEWAY_URL/api/v1/orders" \
     -H "Authorization: $token_header" \
     -H "Content-Type: application/json" \
-    -d '{"asset_id":1,"quantity":1,"total_price":1.0}')
+    -d "{\"asset_id\":1,\"quantity\":1,\"total_price\":$ORDER_PRICE}")
   code=${response##*$'\n'}
   body=${response%$'\n'*}
   if [ "$code" != "202" ]; then
@@ -87,12 +100,15 @@ submit_order() {
 run_outage_test() {
   local service=$1 name=$2 elapsed
   local -a ids=()
+  local balance_before balance_after debit_total
+  balance_before=$(compose exec -T postgres_db sh -c \
+    'psql -U "$POSTGRES_USER" -d wallet_db -Atc "SELECT balance FROM wallets WHERE user_id = 1"')
 
   echo
   echo "--- $name: detener $service después de 10 órdenes ---"
   for ((i=1; i<=ORDER_COUNT; i++)); do
     if [ "$i" -eq 11 ]; then
-      docker compose stop "$service"
+      compose stop "$service"
       service_to_restore=$service
       outage_started=$SECONDS
     fi
@@ -108,11 +124,12 @@ run_outage_test() {
   if [ "$service" = "wallet_service" ]; then
     force_wallet_redelivery
   else
-    docker compose start "$service"
+    compose start "$service"
     service_to_restore=""
+    recovery_started=$SECONDS
   fi
 
-  local ids_csv summary completed failed pending missing
+  local ids_csv summary completed failed pending missing drain_seconds
   ids_csv=$(IFS=,; echo "${ids[*]}")
   for ((attempt=1; attempt<=180; attempt++)); do
     summary=$(curl -fsS "$GATEWAY_URL/api/v1/orders" \
@@ -131,8 +148,9 @@ print(*(sum(state == expected for state in states)
     fi
     sleep 1
   done
+  drain_seconds=$((SECONDS - recovery_started))
 
-  echo "Órdenes: aceptadas=$ORDER_COUNT completadas=$completed fallidas=$failed pendientes=$pending ausentes=$missing"
+  echo "Órdenes: aceptadas=$ORDER_COUNT completadas=$completed fallidas=$failed pendientes=$pending ausentes=$missing drenaje=${drain_seconds}s"
   if [ "$completed" -ne "$ORDER_COUNT" ] || [ "$failed" -ne 0 ] ||
      [ "$pending" -ne 0 ] || [ "$missing" -ne 0 ]; then
     echo "La prueba $name no alcanzó el resultado esperado." >&2
@@ -142,13 +160,23 @@ print(*(sum(state == expected for state in states)
   local expected_transactions actual_transactions query
   expected_transactions=$ORDER_COUNT
   query="SELECT count(*) FROM wallet_transactions WHERE user_id = 1 AND transaction_id IN ($(printf "'order:%s'," "${ids[@]}" | sed 's/,$//'))"
-  actual_transactions=$(docker compose exec -T postgres_db sh -c \
+  actual_transactions=$(compose exec -T postgres_db sh -c \
     'psql -U "$POSTGRES_USER" -d wallet_db -Atc "$1"' sh "$query")
+  balance_after=$(compose exec -T postgres_db sh -c \
+    'psql -U "$POSTGRES_USER" -d wallet_db -Atc "SELECT balance FROM wallets WHERE user_id = 1"')
+  debit_total=$(python3 -c \
+    'from decimal import Decimal; import sys; print(Decimal(sys.argv[1]) - Decimal(sys.argv[2]))' \
+    "$balance_before" "$balance_after")
   echo "P2/idempotencia tras redelivery: transacciones Wallet=$actual_transactions; órdenes completadas=$expected_transactions"
   if [ "$actual_transactions" -ne "$expected_transactions" ]; then
     echo "La cantidad de débitos no coincide con las órdenes completadas." >&2
     return 1
   fi
+  if [ "$(python3 -c 'from decimal import Decimal; import sys; print(Decimal(sys.argv[1]) == Decimal(sys.argv[2]) * Decimal(sys.argv[3]))' "$debit_total" "$completed" "$ORDER_PRICE")" != "True" ]; then
+    echo "El cambio del saldo no coincide con los débitos de las órdenes completadas." >&2
+    return 1
+  fi
+  echo "Saldo: débitos esperados=$((completed)) x $ORDER_PRICE, débito observado=$debit_total"
 }
 
 run_outage_test wallet_service "P1/P2 - caída y recuperación de Wallet"
@@ -157,10 +185,10 @@ run_outage_test catalog_service "P3 - caída y recuperación de Catalog"
 echo
 echo "--- P4 - evento malformado a DLQ y continuidad de Catalog ---"
 probe_id=$(python3 -c 'import time; print(int(time.time() * 1000000))')
-initial_dlq_count=$(docker compose exec -T rabbitmq rabbitmqctl list_queues -q name messages_ready |
+initial_dlq_count=$(compose exec -T rabbitmq rabbitmqctl list_queues -q name messages_ready |
   awk '$1 == "catalog.events.dlq" {print $2}')
 initial_dlq_count=${initial_dlq_count:-0}
-docker compose exec -T order_service python -c "
+compose exec -T order_service python -c "
 from contextlib import closing
 import pika
 from app.events import Event, broker, contract
@@ -192,7 +220,7 @@ with closing(broker.connect()) as connection:
 
 dlq_count=0
 for ((attempt=1; attempt<=30; attempt++)); do
-  dlq_count=$(docker compose exec -T rabbitmq rabbitmqctl list_queues -q name messages_ready |
+  dlq_count=$(compose exec -T rabbitmq rabbitmqctl list_queues -q name messages_ready |
     awk '$1 == "catalog.events.dlq" {print $2}')
   if [ "${dlq_count:-0}" -gt 0 ]; then
     break
@@ -206,7 +234,7 @@ fi
 
 audit_count=0
 for ((attempt=1; attempt<=30; attempt++)); do
-  audit_count=$(docker compose exec -T postgres_db sh -c \
+  audit_count=$(compose exec -T postgres_db sh -c \
     'psql -U "$POSTGRES_USER" -d audit_db -Atc "$1"' sh \
     "SELECT count(*) FROM audit_events WHERE correlation_id = '$probe_id' AND event_type = 'OrderRejected'")
   if [ "$audit_count" -gt 0 ]; then
