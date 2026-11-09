@@ -3,6 +3,7 @@
 """Arranque del Servicio de Wallet: sanity check -> config -> FastAPI (ACID) -> Uvicorn."""
 
 import sys
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
@@ -12,10 +13,19 @@ from fastapi import FastAPI
 from app.aspects.logging_aspect import add_logging_aspect
 from app.config.loader import build_config, load_raw_config
 from app.config.validator import validate
+from app.events import (
+    contract,
+    ensure_outbox_schema,
+    ensure_inbox_schema,
+    start_outbox_relay,
+    start_consumer,
+)
+from app.wallet_events import handle_wallet_event
 from app.routers import wallet_router  # Router específico de cuentas y saldos
 from app.routers.health_router import build_health_router
 
 CONFIG_PATH = Path(__file__).parent / "config" / "config.yaml"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 raw_config = load_raw_config(CONFIG_PATH)
 errors = validate(raw_config)
@@ -30,6 +40,12 @@ config = build_config(raw_config)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     wallet_router.initialize_wallet_schema()
+    ensure_outbox_schema(DATABASE_URL)
+    ensure_inbox_schema(DATABASE_URL)
+
+    start_outbox_relay(DATABASE_URL)
+
+    start_consumer(contract.QUEUE_WALLET, handle_wallet_event)
     yield
 
 

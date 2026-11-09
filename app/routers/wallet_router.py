@@ -1,13 +1,21 @@
 import os
 from decimal import Decimal, ROUND_HALF_UP
 
+from pathlib import Path
+
 import psycopg2
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Request, Response
 from pydantic import BaseModel, Field
 
-router = APIRouter(prefix="/api/v1", tags=["Wallet Service"])
+import xml.etree.ElementTree as ET
+from app.soap.soap_handlers import parse_get_wallet_request, build_get_wallet_response, build_soap_fault
+
+router = APIRouter(prefix="/api/v1/wallets", tags=["Wallet Service"])
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+CURRENT_DIR = Path(__file__).resolve().parent
+WSDL_FILE_PATH = CURRENT_DIR.parent / "soap" / "wallet.wsdl"
 
 
 def get_connection():
@@ -34,16 +42,26 @@ def initialize_wallet_schema() -> None:
     finally:
         conn.close()
 
+@router.get("/soap/wallet/wsdl")
+def get_wallet_wsdl():
+    """Expone el contrato WSDL del servicio SOAP de Wallet."""
+    if not WSDL_FILE_PATH.exists():
+        raise HTTPException(status_code=404, detail=f"WSDL contract not found at {WSDL_FILE_PATH}")
+    
+    with open(WSDL_FILE_PATH, "r", encoding="utf-8") as f:
+        wsdl_content = f.read()
+        
+    return Response(content=wsdl_content, status_code=200, media_type="application/xml")
 
 class TransactionRequest(BaseModel):
     user_id: int
     amount: float = Field(allow_inf_nan=False)  # Positivo para depósito, negativo para débito/compra
     transaction_id: str | None = Field(default=None, min_length=1, max_length=128)
 
-
-@router.get("/wallets")
+### Se reemplaza HTTP Rquest por SOAP
+""" @router.get("/")
 def get_wallet(x_user_id: str = Header(...)):
-    """I-WAL-01: Consulta de saldo del usuario, leído directamente de Postgres."""
+    I-WAL-01: Consulta de saldo del usuario, leído directamente de Postgres.
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -54,10 +72,35 @@ def get_wallet(x_user_id: str = Header(...)):
 
     if row is None:
         raise HTTPException(status_code=404, detail="Wallet not found")
-    return {"user_id": x_user_id, "balance": float(row[0])}
+    return {"user_id": x_user_id, "balance": float(row[0])} """
 
+@router.post("/soap/wallet")
+async def soap_get_wallet(request: Request):
+    body_bytes = await request.body()
+    
+    try:
+        user_id = parse_get_wallet_request(body_bytes)
+    except (ValueError, ET.ParseError):
+        fault_xml = build_soap_fault("Invalid XML or missing user_id")
+        return Response(content=fault_xml, status_code=400, media_type="application/xml")
 
-@router.post("/wallets/transact")
+    # Consulta a BD
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT balance FROM wallets WHERE user_id = %s", (user_id,))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        fault_xml = build_soap_fault(f"Wallet not found for user_id {user_id}")
+        return Response(content=fault_xml, status_code=404, media_type="application/xml")
+
+    response_xml = build_get_wallet_response(user_id, float(row[0]))
+    return Response(content=response_xml, status_code=200, media_type="application/xml")
+
+@router.post("/transact")
 def process_transaction(tx: TransactionRequest, x_user_id: str = Header(...)):
     """I-WAL-02: Transacción ACID real: lock de fila (SELECT ... FOR UPDATE),
     validación y update dentro de una única transacción de Postgres. Ante un
