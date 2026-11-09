@@ -55,6 +55,25 @@ de caída de servicios y crean órdenes de demo), corré
 `bash scripts/demo_ut5_disponibilidad.sh` con el stack levantado. La prueba
 consume saldo de la billetera de demo.
 
+## Tests y demos de UT5
+
+Todo se corre desde la raíz del repo con el stack levantado. Solo hace
+falta Docker Compose, `curl` y Python 3 (sin dependencias extra).
+
+| Comando | Qué verifica | Duración |
+|---|---|---|
+| `bash scripts/test_ut5_e2e.sh` | Tests unitarios (dentro de `order_service`) y tests end-to-end de `tests/e2e/`: infraestructura, Gatekeeper, saga de compra, Audit, SOAP, idempotencia, DLQ y caída de Wallet | ~1 min |
+| `bash scripts/demo_ut5_saga.sh` | Tres compras (completada, activo inactivo, saldo insuficiente) con su traza en Audit, y un `AssetValidated` duplicado que no se debita dos veces | ~15 s |
+| `bash scripts/demo_ut5_seguridad.sh` | Falacia 3: solo el Gateway expone puertos, JWT obligatorio, headers de contexto no suplantables, SOAP sin acceso a billeteras ajenas y permisos por servicio en RabbitMQ | ~10 s |
+| `python3 scripts/demo_ut5_soap.py` | WSDL y `GetWallet` por SOAP a través del Gateway (requiere `requests`) | ~1 s |
+| `docker compose exec order_service python app/soap/test_soap.py` | Order Service consume el SOAP de Wallet por la red interna | ~1 s |
+| `bash scripts/demo_ut5_disponibilidad.sh` | Experimentos P1-P4 del atributo de calidad | ~5 min |
+
+Con `E2E_SKIP_SLOW=1` los tests omiten la prueba de caída de Wallet. Los
+tests y las demos crean órdenes reales y consumen saldo del usuario de
+demo. Si tu `.env` es de una unidad anterior, usá
+`COMPOSE_ENV_FILE=.env.example` o regeneralo con `cp .env.example .env`.
+
 ## Cómo probar la compra y Audit
 
 Obtené un token con el login de demo y enviá una compra al Gateway:

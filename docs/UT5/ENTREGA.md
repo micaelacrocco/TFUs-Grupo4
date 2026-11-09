@@ -518,6 +518,13 @@ RabbitMQ y Postgres publicaban puertos en el host.
   `order.rejected`. Solo Wallet puede publicar `wallet.funds_debited` y
   `wallet.funds_rejected`. Audit escucha los eventos y solo publica en
   sus destinos de reintento y DLQ.
+- **Contexto de usuario solo desde el Gatekeeper.** El Gateway descarta
+  los headers `X-User-Id` y `X-User-Roles` que envía el cliente y los
+  reemplaza por los del JWT. El SOAP de Wallet rechaza consultar una
+  billetera distinta de la del usuario autenticado.
+
+`scripts/demo_ut5_seguridad.sh` verifica estas decisiones contra el stack
+levantado.
 
 #### 4.4 Representación en los modelos
 

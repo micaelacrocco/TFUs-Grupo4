@@ -75,14 +75,21 @@ def get_wallet(x_user_id: str = Header(...)):
     return {"user_id": x_user_id, "balance": float(row[0])} """
 
 @router.post("/soap/wallet")
-async def soap_get_wallet(request: Request):
+async def soap_get_wallet(request: Request, x_user_id: str | None = Header(None)):
     body_bytes = await request.body()
-    
+
     try:
         user_id = parse_get_wallet_request(body_bytes)
     except (ValueError, ET.ParseError):
         fault_xml = build_soap_fault("Invalid XML or missing user_id")
         return Response(content=fault_xml, status_code=400, media_type="application/xml")
+
+    # Vía Gateway, X-User-Id lo fija el Gatekeeper a partir del JWT: un
+    # usuario solo puede consultar su propia billetera. Las llamadas internas
+    # directas (otro servicio en la red Docker) no traen ese header.
+    if x_user_id is not None and x_user_id != str(user_id):
+        fault_xml = build_soap_fault("Access denied: cannot read another user's wallet")
+        return Response(content=fault_xml, status_code=403, media_type="application/xml")
 
     # Consulta a BD
     conn = get_connection()

@@ -20,6 +20,15 @@ PRIVATE_SERVICE_ROUTES = {
 
 ALL_SERVICES = PUBLIC_SERVICE_ROUTES | PRIVATE_SERVICE_ROUTES
 
+# Headers que nunca se reenvían tal como los manda el cliente.
+GATEWAY_CONTROLLED_HEADERS = {
+    "host",
+    "content-length",
+    "x-user-id",
+    "x-user-roles",
+    "x-forwarded-proto",
+}
+
 
 # ==========================================
 # 1. HEALTH CHECKS Y RUTAS PUBLICAS (SIN GATEKEEPER)
@@ -138,13 +147,16 @@ async def gateway_proxy(
     target_base_url = PRIVATE_SERVICE_ROUTES[service_key]
     target_url = f"{target_base_url}/api/v1/{path}"
 
-    # Preparar los headers heredados de la petición original
-    headers = dict(request.headers)
-    
-    # Remover headers de red perimetral que deben recalcularse o no propagarse tal cual
-    headers.pop("host", None)
-    headers.pop("content-length", None)
-    
+    # Preparar los headers heredados de la petición original, descartando los
+    # que se recalculan y los de contexto de usuario que solo puede fijar el
+    # Gatekeeper: si el cliente los manda (en cualquier capitalización), se
+    # descartan para que no pueda suplantar a otro usuario ni a un admin.
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in GATEWAY_CONTROLLED_HEADERS
+    }
+
     # Inyectar contexto seguro validado por el Gatekeeper
     user_id = str(auth_context.get("user_id", ""))
     roles_list = auth_context.get("roles", [])
