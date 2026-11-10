@@ -1,0 +1,36 @@
+@startuml
+title Falacia 1 - Wallet cae y un evento llega duplicado
+
+participant "Catalog Service" as CAT
+queue "wallet.events" as Q
+queue "wallet.events.retry" as R
+queue "wallet.events.dlq" as DLQ
+participant "Wallet Service" as WAL
+database "wallet_db" as WDB
+
+CAT -> Q : AssetValidated(order_id=42)
+note over Q : Wallet caído:\nel evento espera (cola durable)
+
+== Wallet vuelve ==
+Q -> WAL : AssetValidated(42)
+WAL -> WDB : BEGIN\nINSERT tx(order_id=42)\nUPDATE saldo\nINSERT outbox(FundsDebited)\nCOMMIT
+WAL -x Q : ack perdido (Wallet reinicia)
+
+== Reentrega: at-least-once ==
+Q -> WAL : AssetValidated(42) (duplicado)
+WAL -> WDB : SELECT tx WHERE order_id=42
+WDB --> WAL : ya existe
+note right of WAL : Idempotencia:\nno se debita de nuevo
+WAL -> Q : ack
+
+== Mensaje que falla siempre ==
+loop Intentos 1 a 4
+  Q -> WAL : AssetValidated(43)
+  WAL -> R : reenvío confirmado
+  WAL -> Q : ack
+  R -> Q : vuelve después de 5 s
+end
+Q -> WAL : quinto intento
+WAL -> DLQ : reenvío confirmado
+WAL -> Q : ack
+@enduml

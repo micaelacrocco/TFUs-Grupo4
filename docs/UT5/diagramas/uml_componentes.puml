@@ -1,0 +1,57 @@
+@startuml
+skinparam componentStyle uml2
+skinparam nodesep 40
+skinparam ranksep 60
+title Diagrama de Componentes - InvestNow (EDA, topología broker)
+
+actor Cliente
+component "API Gateway" as GW
+note right of GW
+  JWT, Gatekeeper,
+  Gateway Offloading
+end note
+
+() "IOrderAPI\nPOST/GET /orders" as IOrder
+() "ICatalogAPI\nGET /catalog" as ICatalog
+() "IWalletAPI\nGET /wallets" as IWallet
+
+rectangle "Órdenes" {
+  component "Order Service" as ORD
+  database "order_db\n(orders + outbox)" as ODB
+}
+rectangle "Catálogo" {
+  component "Catalog Service" as CAT
+  database "Redis\n(cache)" as RDS
+}
+rectangle "Wallet" {
+  component "Wallet Service" as WAL
+  database "wallet_db\n(tx + outbox)" as WDB
+}
+rectangle "Auditoría" {
+  component "Audit Service" as AUD
+  database "audit_db" as ADB
+}
+
+() "IEventBus\n(publish / subscribe)" as IEvt
+component "Event Broker\nRabbitMQ · exchange investnow.events\ncolas durables + DLQ" as BRK
+
+Cliente --> GW : HTTPS / JSON
+
+GW ..> IOrder
+GW ..> ICatalog
+GW ..> IWallet
+IOrder -- ORD
+ICatalog -- CAT
+IWallet -- WAL
+
+ORD -right-> ODB
+CAT -right-> RDS
+WAL -right-> WDB
+AUD -right-> ADB
+
+ORD ..> IEvt
+CAT ..> IEvt
+WAL ..> IEvt
+AUD ..> IEvt
+IEvt -- BRK
+@enduml

@@ -1,0 +1,47 @@
+@startuml
+title Secuencia - Comprar un activo (saga coreografiada)
+
+actor Cliente
+participant "API Gateway" as GW
+participant "Order Service" as ORD
+database "order_db" as ODB
+queue "Event Broker" as BRK
+participant "Catalog Service" as CAT
+participant "Wallet Service" as WAL
+database "wallet_db" as WDB
+participant "Audit Service" as AUD
+
+Cliente -> GW : POST /orders (JWT)
+GW -> ORD : POST /orders (X-User-Id)
+ORD -> ODB : BEGIN; INSERT order PENDING;\nINSERT outbox(OrderPlaced); COMMIT
+ORD --> GW : 202 {order_id, PENDING}
+GW --> Cliente : 202 {order_id, PENDING}
+
+ORD -> BRK : [outbox relay] publish OrderPlaced
+BRK -> CAT : OrderPlaced
+BRK -> AUD : OrderPlaced
+
+alt activo existe y está activo
+  CAT -> BRK : publish AssetValidated
+  BRK -> WAL : AssetValidated
+  WAL -> WDB : BEGIN; ¿existe tx order_id? (idempotencia)\nSELECT ... FOR UPDATE; UPDATE saldo;\nINSERT tx; INSERT outbox; COMMIT
+  alt saldo suficiente
+    WAL -> BRK : [outbox relay] publish FundsDebited
+    BRK -> ORD : FundsDebited
+    ORD -> ODB : UPDATE order COMPLETED
+  else saldo insuficiente
+    WAL -> BRK : [outbox relay] publish FundsRejected
+    BRK -> ORD : FundsRejected
+    ORD -> ODB : UPDATE order FAILED
+  end
+else activo inexistente o inactivo
+  CAT -> BRK : publish OrderRejected
+  BRK -> ORD : OrderRejected
+  ORD -> ODB : UPDATE order FAILED
+end
+BRK -> AUD : FundsDebited / FundsRejected / OrderRejected
+
+Cliente -> GW : GET /orders
+GW -> ORD : GET /orders
+ORD --> Cliente : estado actual de la orden
+@enduml

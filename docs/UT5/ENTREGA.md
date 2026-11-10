@@ -4,9 +4,6 @@
 > [`../UT4/ENTREGA.md`](../UT4/ENTREGA.md). Para la visión general del
 > proyecto y cómo levantar el stack, ver el [`README.md`](../../README.md).
 
-Los diagramas están en PlantUML: pegar cada bloque en
-https://editor.plantuml.com para visualizarlo.
-
 ---
 
 ## Parte 1
@@ -47,9 +44,11 @@ componente central coordina el flujo.
 | Publicación confiable | Doble escritura (DB, después cola) | **Transactional Outbox** en Órdenes y Wallet |
 | Consistencia del flujo | Sincrónica dentro del worker | Eventual, mediante una **saga coreografiada** con eventos de compensación |
 
-Las **consultas** (catálogo, saldo, historial de órdenes) siguen siendo
+Las **consultas** (catálogo, historial de órdenes) siguen siendo
 REST sincrónico a través del Gateway: el usuario necesita una respuesta
 inmediata y no hay efectos secundarios que propagar.
+
+La consulta de saldo se migró de REST a SOAP con contrato WSDL.
 
 #### 1.3 Por qué EDA y no SOA
 
@@ -109,65 +108,7 @@ debitar deja el mismo estado ambiguo y necesita los mismos mecanismos.
 
 #### 2.1 Diagrama de componentes
 
-```plantuml
-@startuml
-skinparam componentStyle uml2
-skinparam nodesep 40
-skinparam ranksep 60
-title Diagrama de Componentes - InvestNow (EDA, topología broker)
-
-actor Cliente
-component "API Gateway" as GW
-note right of GW
-  JWT, Gatekeeper,
-  Gateway Offloading
-end note
-
-() "IOrderAPI\nPOST/GET /orders" as IOrder
-() "ICatalogAPI\nGET /catalog" as ICatalog
-() "IWalletAPI\nGET /wallets" as IWallet
-
-rectangle "Órdenes" {
-  component "Order Service" as ORD
-  database "order_db\n(orders + outbox)" as ODB
-}
-rectangle "Catálogo" {
-  component "Catalog Service" as CAT
-  database "Redis\n(cache)" as RDS
-}
-rectangle "Wallet" {
-  component "Wallet Service" as WAL
-  database "wallet_db\n(tx + outbox)" as WDB
-}
-rectangle "Auditoría" {
-  component "Audit Service" as AUD
-  database "audit_db" as ADB
-}
-
-() "IEventBus\n(publish / subscribe)" as IEvt
-component "Event Broker\nRabbitMQ · exchange investnow.events\ncolas durables + DLQ" as BRK
-
-Cliente --> GW : HTTPS / JSON
-
-GW ..> IOrder
-GW ..> ICatalog
-GW ..> IWallet
-IOrder -- ORD
-ICatalog -- CAT
-IWallet -- WAL
-
-ORD -right-> ODB
-CAT -right-> RDS
-WAL -right-> WDB
-AUD -right-> ADB
-
-ORD ..> IEvt
-CAT ..> IEvt
-WAL ..> IEvt
-AUD ..> IEvt
-IEvt -- BRK
-@enduml
-```
+[![Diagrama de Componentes](./diagramas/diagrama_componentes.png)](https://editor.plantuml.com/uml/PLHBZjf04DttAKgiGE4pYg8iiXYD-OWmcGmC4B51Yjfs0IrCjzLk0wCefyW9Se2iimyNItMt3NZOMAggL-_Lh_sG6QvDlajOjXKovPhl85AxL4cKPcPU4mGAlh-AIXLZXYbykBjoQYwtrldnZXbXAAal-9e276A4Nic76RHW9FUOcMTrWFgW7pJ1g5GbQdtwmo7KQekwmHYFZDBGIuHDOkTwe1PCHZ3a1W_yjGOyW-62IMKGj5Xl3AYLTG0yBkPD1ziYfgYRv2gIOBnQ9Oh7GguPoXXiCcFr1jH6OnsZ9lwbd8ndyyvmC8UEihxCAVcuX_QuuLIo0pjSv1qUM4GzTC6J1Cq5UN1sGUc3Z6cC39Th6bljz8ja91BW1rLzrRcJXndglOZGfO-dVOB4f1RoZ59TiT_ZS2dhlcvu1oeteJesFBxVPJ-ljQZGqs-gLDs85IrKv7h1l28tnLXaf1NnQ8DUOTgVLHLyWpVqtbrXNmHF5NO_9z-DERxfPF6sao2F1LqCtT2DbWjLf89lrRbnYo0b7tJKVdU3FJ5qSzjaceU9o3RGWImFiqYBi6YPGERwG5qETDqXB-MKXw4mNr_Wtr_0OxIXSX64Um1I7TfemKGVgOIeubppC46xjlxJYsFlJhymLZm3QBNkwRpX4toUpoSpAkLnDdvcZ5pjzdrvdwLL7c5f5wVcKKJbhgT4MTkkjq1Pq-w34GPQxccHj3qV0bqSTji4kpZiMcYu5uSTfYDn9TX9MOApOPFFXaqy6_PZgx3zFz0xfL_GVm00)
 
 Para no recargar el diagrama, los eventos que publica y consume cada
 servicio se detallan en la tabla:
@@ -177,7 +118,7 @@ servicio se detallan en la tabla:
 | API Gateway | Punto de entrada, autenticación, autorización, ruteo | REST público `:8000` | — | — |
 | Order Service | Ciclo de vida de la orden | `POST /orders`, `GET /orders` | `OrderPlaced` | `OrderRejected`, `FundsDebited`, `FundsRejected` |
 | Catalog Service | Activos operables y su estado | `GET /catalog` | `AssetValidated`, `OrderRejected` | `OrderPlaced` |
-| Wallet Service | Saldo y movimientos atómicos | `GET /wallets` | `FundsDebited`, `FundsRejected` | `AssetValidated` |
+| Wallet Service | Saldo y movimientos atómicos | `POST /soap/wallets` | `FundsDebited`, `FundsRejected` | `AssetValidated` |
 | Audit Service | Traza inmutable de eventos | — | — | `order.*`, `wallet.*` |
 | Event Broker | Ruteo y persistencia de eventos, DLQ | AMQP | — | — |
 
@@ -186,61 +127,7 @@ Cada evento lleva un sobre común: `event_id` (UUID, para deduplicar),
 
 #### 2.2 Diagrama de despliegue
 
-```plantuml
-@startuml
-title Diagrama de Despliegue - InvestNow (EDA)
-
-node "Host Docker" {
-  node "Red: investnow-net" {
-    node "Contenedor: api\n(puerto publicado 8000)" {
-      artifact "gateway (FastAPI)" as GWa
-    }
-    node "Contenedor: order_service" {
-      artifact "Order API" as ORDa
-      artifact "outbox relay" as ORDr
-      artifact "event consumer" as ORDc
-    }
-    node "Contenedor: catalog_service" {
-      artifact "Catalog API" as CATa
-      artifact "event consumer" as CATc
-    }
-    node "Contenedor: wallet_service" {
-      artifact "Wallet API" as WALa
-      artifact "outbox relay" as WALr
-      artifact "event consumer" as WALc
-    }
-    node "Contenedor: audit_service" {
-      artifact "event consumer" as AUDc
-    }
-    node "Contenedor: rabbitmq" {
-      artifact "exchange investnow.events\ncolas durables + DLQ" as MQ
-    }
-    node "Contenedor: postgres" {
-      database "order_db" as ODB
-      database "wallet_db" as WDB
-      database "audit_db" as ADB
-    }
-    node "Contenedor: redis" {
-      database "cache" as RDS
-    }
-  }
-}
-
-GWa --> ORDa : HTTP
-GWa --> CATa : HTTP
-GWa --> WALa : HTTP
-ORDr --> MQ : AMQP publish
-WALr --> MQ : AMQP publish
-CATc <--> MQ : AMQP
-ORDc <-- MQ : AMQP
-WALc <-- MQ : AMQP
-AUDc <-- MQ : AMQP
-ORDa --> ODB
-WALa --> WDB
-AUDc --> ADB
-CATa --> RDS
-@enduml
-```
+[![Diagrama de Despliegue](./diagramas/diagrama_despliegue.png)](https://editor.plantuml.com/uml/ZPHHRzem4CVVyobEF55LL3nEQAgQacsjL5gWLBnKcYxsBLWpTcOxqAhYkzTsW6uGihx5V_zyz_VvBbVMeN7LKYPEE4cG2ImCBX6u_oPRIa55HT23MxKYw-xr6hhVilGiIPJsIET6MmUPPh_9TE0j0QZbAV41Y7X4wNLFaQjtT_j3hHmfujeC04lnhBfbHSPfAAjS2ePSmvT-lt-sEmNWNOfVo1nq2dIqnbVeVaVhql6jXz32Zpb6SdCYYpQSp4zBPYKODOLz203uU37SmpJ38qHNBjSlO4ZYwuuoHnIjI3bWMjbg6QfISwpL7KE7KXTj_eOridSuJ6V73XjoUwuzzngb9DUMUXw9VUPvUlU9sdZgKxNnNBi_hBXejTSGD7twJy4Dvhbmop-DyLxO0bL17mry4LFOPyMqzD5vvOzBid0EsTqa9XnDMjELVamAG_OZ7VVFcQFrNDsPFAyx9Ri-0hOFj2Nc3KHTeYsGRe6JLoSk6eqmP0kA8QRPupx49jaaYPykwFKkurZ006vci_5U2urug8KMsMbXIA8ucdWf7Kt6zPJRHH9wvCHMQ5lu-izUY1IrlwJGFGTIUFi3ATgE_drjehTeqYyY71QXQl4cOH7kVqMAX__YEm00)
 
 Solo el Gateway publica un puerto al host. Cada servicio corre en su
 propio contenedor y se escala de forma independiente: varias réplicas de
@@ -253,55 +140,7 @@ el despliegue. Ningún servicio accede a la base de otro.
 Es el caso de uso más significativo: mueve dinero y atraviesa todos los
 servicios.
 
-```plantuml
-@startuml
-title Secuencia - Comprar un activo (saga coreografiada)
-
-actor Cliente
-participant "API Gateway" as GW
-participant "Order Service" as ORD
-database "order_db" as ODB
-queue "Event Broker" as BRK
-participant "Catalog Service" as CAT
-participant "Wallet Service" as WAL
-database "wallet_db" as WDB
-participant "Audit Service" as AUD
-
-Cliente -> GW : POST /orders (JWT)
-GW -> ORD : POST /orders (X-User-Id)
-ORD -> ODB : BEGIN; INSERT order PENDING;\nINSERT outbox(OrderPlaced); COMMIT
-ORD --> GW : 202 {order_id, PENDING}
-GW --> Cliente : 202 {order_id, PENDING}
-
-ORD -> BRK : [outbox relay] publish OrderPlaced
-BRK -> CAT : OrderPlaced
-BRK -> AUD : OrderPlaced
-
-alt activo existe y está activo
-  CAT -> BRK : publish AssetValidated
-  BRK -> WAL : AssetValidated
-  WAL -> WDB : BEGIN; ¿existe tx order_id? (idempotencia)\nSELECT ... FOR UPDATE; UPDATE saldo;\nINSERT tx; INSERT outbox; COMMIT
-  alt saldo suficiente
-    WAL -> BRK : [outbox relay] publish FundsDebited
-    BRK -> ORD : FundsDebited
-    ORD -> ODB : UPDATE order COMPLETED
-  else saldo insuficiente
-    WAL -> BRK : [outbox relay] publish FundsRejected
-    BRK -> ORD : FundsRejected
-    ORD -> ODB : UPDATE order FAILED
-  end
-else activo inexistente o inactivo
-  CAT -> BRK : publish OrderRejected
-  BRK -> ORD : OrderRejected
-  ORD -> ODB : UPDATE order FAILED
-end
-BRK -> AUD : FundsDebited / FundsRejected / OrderRejected
-
-Cliente -> GW : GET /orders
-GW -> ORD : GET /orders
-ORD --> Cliente : estado actual de la orden
-@enduml
-```
+[![Diagrama de Secuencia](./diagramas/diagrama_secuencia.png)](https://editor.plantuml.com/uml/dLJRRjD047tVhnZbAP58Y_f89AWJkv4XJQB48KWKeOrt6XOsTjXTjwaG7yEN8C6FCLxRQRQXHU8fyfoJcNFcikV6ScsBZM9MMeKmnxJ0B9KSkZ38DrlDDHGPyDJAcnpQXgyvfBd6VAtvjUI2TnWZCDSmK18pYsnB-MGgjpopq0gcCGovnLj-rm9kOBZqyOaMgAcelf4fEiPa5ZB1BLznWz3AI_oZM5LGs6TV2ome7jrGBUZh_0jgX_LdR_pC0ygXyhMNUn0aFcd9bKBhSPR1wA3-hICq0fOamBTN2Ed_FLY4ZDMjWEvBCWmlO3gP9t3gl1Xelruc7KPnGidi4Vokkp2ekx7ei18kMM6VMFre68zx48_dqIm1nuPfD0xZyR1tbJNXmgxoNTkrTQfuYgBJWy7ayZ9EgcoDfBFdP_2jwguKpvf4tvqkuZGE7YSsugZnn7fV5GQDYjzzW6snKj9yWWCTh2IMcOE4-7y1g7CF0CQLRJOFTzAGdZj0Ot__gACCNBgzYgPiO0pQjrn96YJb0QXBq6o9TOIMuH8zRFEldtL5kuF6_IjeIu6RRMxTXNIkidaqYWO9d9oSmCLa1ejf62HHh_u5mvN8xsTZT_VJSztQJmQWTEheO8fhMYztIG1xRKzs-QB8X0bn9IixUxlLTXsXtbRLKgjr8ZdJKPH48V5GqVvNacJslw9c-1dJnrLvyEEoBe9uL6dA17EwwgMGMJMaSbFBhwUtmgtMGKbFpqFmdsfABTxc7lOPJds3zEqNE7eYXj7-2V3UXiDuSy3tnqd7m6b0vBlW2WI2uavbniv97xtgVm00)
 
 Cuando el procesamiento sale bien, el consumidor confirma (*ack*) el
 mensaje después de terminar su trabajo. Si hay una falla técnica, publica
@@ -430,44 +269,7 @@ para que el *at-least-once* sea seguro con dinero. Se descarta
 *exactly-once* a nivel de broker por costoso y frágil: se obtiene el mismo
 efecto de negocio con at-least-once más idempotencia.
 
-```plantuml
-@startuml
-title Falacia 1 - Wallet cae y un evento llega duplicado
-
-participant "Catalog Service" as CAT
-queue "wallet.events" as Q
-queue "wallet.events.retry" as R
-queue "wallet.events.dlq" as DLQ
-participant "Wallet Service" as WAL
-database "wallet_db" as WDB
-
-CAT -> Q : AssetValidated(order_id=42)
-note over Q : Wallet caído:\nel evento espera (cola durable)
-
-== Wallet vuelve ==
-Q -> WAL : AssetValidated(42)
-WAL -> WDB : BEGIN\nINSERT tx(order_id=42)\nUPDATE saldo\nINSERT outbox(FundsDebited)\nCOMMIT
-WAL -x Q : ack perdido (Wallet reinicia)
-
-== Reentrega: at-least-once ==
-Q -> WAL : AssetValidated(42) (duplicado)
-WAL -> WDB : SELECT tx WHERE order_id=42
-WDB --> WAL : ya existe
-note right of WAL : Idempotencia:\nno se debita de nuevo
-WAL -> Q : ack
-
-== Mensaje que falla siempre ==
-loop Intentos 1 a 4
-  Q -> WAL : AssetValidated(43)
-  WAL -> R : reenvío confirmado
-  WAL -> Q : ack
-  R -> Q : vuelve después de 5 s
-end
-Q -> WAL : quinto intento
-WAL -> DLQ : reenvío confirmado
-WAL -> Q : ack
-@enduml
-```
+[![Diagrama Secuencia de Falacia 1](./diagramas/diagrama_secuencia_falacia1.png)](https://editor.plantuml.com/uml/XLFBRXf14BpFLxGumG5BIPoB9IBpM2T8u8H7mWN9QdOQCiamiypCRk2JVF1Ny6FfMPOLTfpak5irrLNzkFK1NSYtMWGLDC4TQamLmXjemmArfW0f4XmWDq05cM21VsuGP9vfbQAqGcIie5ALeGdGw6D0RJSm8rUeb1g07lhTkTZbb1CqVfMQLwMKBy79gz2Le-0E9M7wEa7gNGaFHfFd3YhRbmOMtP6GR6o5ljPvaAiJDkW9mGwX_G4cS0DTxobyGwtu0SccTPBSWvATwxSjOMmWi0Mvabdtv_WaxStIa3wtY7n63g6PMXqxvN2bgIL4ftD-K-Ia2u9EHqnYNVRtP-LOC08H7_GOxoKVX_TBCxoV9TCvXFqpRqlpzSkWEq_0evQsPjayhEo-UPSRwGUqKYpCrFxdyNWuFwdloooO_WJsB9MqqAnCEbA6kuedvrFYQ8v7p-JGreG-jAr9_ny2clMkl0WqIqP9FoQ1nQTaci157X4PxLhrW41xvGETHk3Kvdi0kwxGeQHjnlyDc-Kv60iyPXdJSlS9J4w5FLUkmfQHncGy_Y3W_O8rPqRmYfLScKbRcy7GX3XGp_U0S2q0_f7qNOlngigKSSSDAuvF5b9hrifjuwtKXBCDO6hrMUs4vEN9Zuy-EdyFNf2Hb_tTvIfkc3ePEwVY8_XBnHVrRbcEh_qt)
 
 #### 4.2 Falacia 2: La latencia es cero
 

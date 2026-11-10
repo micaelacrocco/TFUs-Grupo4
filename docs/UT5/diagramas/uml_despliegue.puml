@@ -1,0 +1,53 @@
+@startuml
+title Diagrama de Despliegue - InvestNow (EDA)
+
+node "Host Docker" {
+  node "Red: investnow-net" {
+    node "Contenedor: api\n(puerto publicado 8000)" {
+      artifact "gateway (FastAPI)" as GWa
+    }
+    node "Contenedor: order_service" {
+      artifact "Order API" as ORDa
+      artifact "outbox relay" as ORDr
+      artifact "event consumer" as ORDc
+    }
+    node "Contenedor: catalog_service" {
+      artifact "Catalog API" as CATa
+      artifact "event consumer" as CATc
+    }
+    node "Contenedor: wallet_service" {
+      artifact "Wallet API" as WALa
+      artifact "outbox relay" as WALr
+      artifact "event consumer" as WALc
+    }
+    node "Contenedor: audit_service" {
+      artifact "event consumer" as AUDc
+    }
+    node "Contenedor: rabbitmq" {
+      artifact "exchange investnow.events\ncolas durables + DLQ" as MQ
+    }
+    node "Contenedor: postgres" {
+      database "order_db" as ODB
+      database "wallet_db" as WDB
+      database "audit_db" as ADB
+    }
+    node "Contenedor: redis" {
+      database "cache" as RDS
+    }
+  }
+}
+
+GWa --> ORDa : HTTP
+GWa --> CATa : HTTP
+GWa --> WALa : HTTP
+ORDr --> MQ : AMQP publish
+WALr --> MQ : AMQP publish
+CATc <--> MQ : AMQP
+ORDc <-- MQ : AMQP
+WALc <-- MQ : AMQP
+AUDc <-- MQ : AMQP
+ORDa --> ODB
+WALa --> WDB
+AUDc --> ADB
+CATa --> RDS
+@enduml
